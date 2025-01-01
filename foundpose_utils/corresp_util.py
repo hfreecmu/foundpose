@@ -4,7 +4,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 import torch
 import torchvision
-from utils import (
+from foundpose_utils import (
     knn_util,
     repre_util,
     template_util,

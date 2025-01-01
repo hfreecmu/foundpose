@@ -6,8 +6,8 @@ import numpy as np
 
 import torch
 
-from utils import logging
-from utils.misc import array_to_tensor, tensor_to_array
+from foundpose_utils import logging
+from foundpose_utils.misc import array_to_tensor, tensor_to_array
 from sklearn.decomposition import PCA
 
 

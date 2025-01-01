@@ -7,7 +7,7 @@ import cv2
 
 import numpy as np
 
-from utils import (
+from foundpose_utils import (
     eval_errors,
     config_util,
     json_util,

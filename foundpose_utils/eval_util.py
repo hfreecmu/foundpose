@@ -5,14 +5,14 @@ import os
 from typing import Dict, List
 
 import numpy as np
-from utils import (
+from foundpose_utils import (
     html_util,
     repre_util,
     eval_errors,
     json_util,
     logging, misc, structs, geometry
 )
-from utils.structs import RigidTransform, PinholePlaneCameraModel
+from foundpose_utils.structs import RigidTransform, PinholePlaneCameraModel
 
 from bop_toolkit_lib import inout
 

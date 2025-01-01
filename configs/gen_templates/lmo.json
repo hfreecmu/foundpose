@@ -10,12 +10,13 @@
         "max_num_triangles": 20000,
         "back_face_culling": false,
         "texture_size": [1024, 1024],
-        "ssaa_factor": 4.0,
+        "ssaa_factor": 2.0, 
         "background_type": "black",
         "light_type": "multi_directional",
         "features_patch_size": 14,
         "crop": true,
         "crop_rel_pad": 0.2,
-        "crop_size": [420, 420]
+        "crop_size": [420, 420],
+        "splat_path": "/home/hfreeman/harry_ws/repos/feature-3dgs/output/pruners/mask.ply"
     }
 }

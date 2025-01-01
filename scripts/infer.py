@@ -16,14 +16,14 @@ import numpy as np
 
 import torch
 
-from utils.misc import array_to_tensor, tensor_to_array, tensors_to_arrays
+from foundpose_utils.misc import array_to_tensor, tensor_to_array, tensors_to_arrays
 
 from bop_toolkit_lib import inout, dataset_params
 import bop_toolkit_lib.config as bop_config
 import bop_toolkit_lib.misc as bop_misc
 
 
-from utils import (
+from foundpose_utils import (
     corresp_util,
     config_util,
     eval_errors,
@@ -44,8 +44,8 @@ from utils import (
     structs,
 )
 
-from utils.structs import AlignedBox2f, PinholePlaneCameraModel
-from utils.misc import warp_depth_image, warp_image
+from foundpose_utils.structs import AlignedBox2f, PinholePlaneCameraModel
+from foundpose_utils.misc import warp_depth_image, warp_image
 
 
 logger: logging.Logger = logging.get_logger()

@@ -26,7 +26,7 @@ from typing import Optional, Tuple, Type
 
 import numpy as np
 
-from utils import geometry
+from foundpose_utils import geometry
 
 ArrayData = Union[np.ndarray, torch.Tensor]
 Color = Tuple[float, float, float]

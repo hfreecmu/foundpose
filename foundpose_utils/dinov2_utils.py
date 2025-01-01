@@ -12,7 +12,7 @@ import torch
 import torch.nn.modules.utils as nn_utils
 import torchvision.transforms as T
 
-from utils import logging
+from foundpose_utils import logging
 
 from torch import nn
 from torch.utils.hooks import RemovableHandle

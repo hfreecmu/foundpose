@@ -55,6 +55,9 @@ class KNN:
             # Normalization.
             data = data / torch.linalg.norm(data, dim=1, keepdim=True)
 
+            if data.is_cuda:
+                data = data.cpu()
+
             self.index.train(data)
             self.index.add(data)
 

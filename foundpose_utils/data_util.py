@@ -7,14 +7,14 @@ import torch
 
 import numpy as np
 
-from utils.misc import (
+from foundpose_utils.misc import (
     array_to_tensor,
     arrays_to_tensors,
 )
 from bop_toolkit_lib import inout
-from utils.structs import AlignedBox2f, PinholePlaneCameraModel
+from foundpose_utils.structs import AlignedBox2f, PinholePlaneCameraModel
 
-from utils import json_util, logging, structs, misc
+from foundpose_utils import json_util, logging, structs, misc
 
 logger: logging.Logger = logging.get_logger()
 

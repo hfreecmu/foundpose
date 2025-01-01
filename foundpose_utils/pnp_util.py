@@ -5,13 +5,13 @@ from typing import Any, Dict, Tuple
 import cv2
 import numpy as np
 
-from utils import (
+from foundpose_utils import (
     logging,
     misc
 )
-from utils.misc import tensor_to_array
+from foundpose_utils.misc import tensor_to_array
 
-from utils.structs import AlignedBox2f, PinholePlaneCameraModel
+from foundpose_utils.structs import AlignedBox2f, PinholePlaneCameraModel
 
 logger: logging.Logger = logging.get_logger()
 
@@ -35,7 +35,6 @@ def estimate_pose(
             - nn_indices (num_points).: indices within the object representations
         camera_c2w: camera intrinsics.
     """
-
     if pnp_type == "opencv":
 
         object_points = tensor_to_array(corresp["coord_3d"]).astype(np.float32)

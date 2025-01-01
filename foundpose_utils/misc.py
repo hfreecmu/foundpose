@@ -16,12 +16,12 @@ import numpy as np
 from PIL import Image
 import torch
 
-from utils import geometry, logging
+from foundpose_utils import geometry, logging
 
-import utils.structs as structs
-from utils.structs import AlignedBox2f, CameraModel, PinholePlaneCameraModel
+import foundpose_utils.structs as structs
+from foundpose_utils.structs import AlignedBox2f, CameraModel, PinholePlaneCameraModel
 
-from utils.geometry import transform_3d_points_numpy, gen_look_at_matrix
+from foundpose_utils.geometry import transform_3d_points_numpy, gen_look_at_matrix
 
 logger: logging.Logger = logging.get_logger()
 

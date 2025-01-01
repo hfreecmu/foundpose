@@ -5,7 +5,7 @@
 from enum import Enum
 from typing import Any, Optional
 
-from utils import renderer_base
+from foundpose_utils import renderer_base
 
 
 class RendererType(Enum):
@@ -27,7 +27,7 @@ def build(
         A model.
     """
     if renderer_type == RendererType.PYRENDER_RASTERIZER:
-        from utils import renderer
+        from foundpose_utils import renderer
 
         return renderer.PyrenderRasterizer(**kwargs)
     else:

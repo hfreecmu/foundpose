@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional, Sequence
 
 import numpy as np
 import trimesh
-from utils import structs 
+from foundpose_utils import structs 
 
 
 def get_single_model_color(mesh: trimesh.Trimesh) -> structs.Color:

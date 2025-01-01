@@ -20,6 +20,8 @@
         "pnp_inlier_thresh": 10.0,
         "final_pose_type": "best_coarse",
         "num_preds_factor": 1,
-        "vis_results": true
+        "vis_results": true,
+        "splat_path": "/home/hfreeman/harry_ws/repos/feature-3dgs/output/pruners/mask.ply",
+        "vis_for_paper": false
     }
 }

@@ -9,7 +9,8 @@ dependencies:
   - python=3.9
   - pytorch::pytorch=2.3.0
   - pytorch::pytorch-cuda=11.7.0 # GPU
-  - pytorch::torchvision=0.18.0
+  # - pytorch::torchvision=0.18.0
+  - pytorch::torchvision
   - omegaconf
   - torchmetrics=0.10.3
   - fvcore
@@ -35,7 +36,8 @@ dependencies:
     - pypng==0.20220715.0
     - triangle==20200424
     - glumpy==1.2.1
-    - pycocotools==2.0
+    # - pycocotools==2.0
+    - pycocotools
     - scikit-learn==1.5.0
     - scikit-image==0.22.0
     - imageio==2.34.1

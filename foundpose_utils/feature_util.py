@@ -6,10 +6,10 @@ import kornia
 import torch
 import torch.nn.functional as F
 
-from utils import logging, misc, geometry
-from utils.structs import PinholePlaneCameraModel
+from foundpose_utils import logging, misc, geometry
+from foundpose_utils.structs import PinholePlaneCameraModel
 
-from utils import dinov2_utils
+from foundpose_utils import dinov2_utils
 
 logger: logging.Logger = logging.get_logger()
 

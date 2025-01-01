@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 
 import torch
 
-from utils import knn_util, repre_util, logging, misc
+from foundpose_utils import knn_util, repre_util, logging, misc
 
 logger: logging.Logger = logging.get_logger()
 

@@ -8,10 +8,10 @@ from typing import Any, Dict, List, NamedTuple, Optional
 
 import torch
 
-from utils import projector_util, logging, misc
-from utils.structs import PinholePlaneCameraModel
+from foundpose_utils import projector_util, logging, misc
+from foundpose_utils.structs import PinholePlaneCameraModel
 
-from utils.misc import tensor_to_array
+from foundpose_utils.misc import tensor_to_array
 
 logger: logging.Logger = logging.get_logger()
 

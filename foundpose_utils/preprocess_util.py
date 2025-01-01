@@ -7,9 +7,9 @@ import torch
 import torchvision.transforms as T
 
 
-from utils import feature_util
-from utils import logging
-from utils.misc import array_to_tensor
+from foundpose_utils import feature_util
+from foundpose_utils import logging
+from foundpose_utils.misc import array_to_tensor
 
 
 logger: logging.Logger = logging.get_logger()

@@ -78,8 +78,6 @@ def generate_raw_repre(
     # Prepare a timer.
     timer = misc.Timer(enabled=debug)
 
-    datasets_path = bop_config.datasets_path
-
     # Load the template metadata.
     # metadata_path = "/Users/evinpinar/Documents/opensource_foundpose/output/templates/v1/lmo/1/metadata.json"
     metadata_path = os.path.join(
@@ -225,8 +223,6 @@ def generate_repre(
 ) -> None:
 
     logger = logging.get_logger(level=logging.INFO if opts.debug else logging.WARNING)
-
-    datasets_path = bop_config.datasets_path
 
     # Prepare a timer.
     timer = misc.Timer(enabled=opts.debug)
@@ -393,8 +389,8 @@ def generate_repre_from_list(opts: GenRepreOpts) -> None:
     print("Device: ", device)
 
     # Process each image separately.
-    for object_lid in object_lids:
-        generate_repre(opts, opts.object_dataset, object_lid, device, extractor)
+    object_lid = 'pruners'
+    generate_repre(opts, opts.object_dataset, object_lid, device, extractor)
 
 
 def main() -> None:

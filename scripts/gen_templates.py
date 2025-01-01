@@ -15,7 +15,7 @@ from bop_toolkit_lib import inout, dataset_params
 
 import bop_toolkit_lib.config as bop_config
 
-from utils import (
+from foundpose_utils import (
     misc as foundpose_misc,
     json_util,
     config_util,
@@ -24,11 +24,11 @@ from utils import (
     structs
 )
 
-from utils.structs import AlignedBox2f, PinholePlaneCameraModel
+from foundpose_utils.structs import AlignedBox2f, PinholePlaneCameraModel
 
-from utils.misc import warp_depth_image, warp_image
-from utils import geometry, renderer_builder
-from utils.renderer_base import RenderType
+from foundpose_utils.misc import warp_depth_image, warp_image
+from foundpose_utils import geometry, renderer_builder
+from foundpose_utils.renderer_base import RenderType
 
 
 class GenTemplatesOpts(NamedTuple):

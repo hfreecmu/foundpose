@@ -1,0 +1,4 @@
+bop_datasets
+output
+*.dump
+**__pycache__**

@@ -6,7 +6,7 @@ import faiss
 import faiss.contrib.torch_utils
 import torch
 
-from utils.misc import array_to_tensor
+from foundpose_utils.misc import array_to_tensor
 
 
 def kmeans(

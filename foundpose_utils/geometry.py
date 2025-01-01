@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from typing import Tuple, TypeVar
 import scipy
-from utils import geometry
+from foundpose_utils import geometry
 
 from scipy.spatial.transform import Rotation
 

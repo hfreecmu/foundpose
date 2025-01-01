@@ -12,9 +12,9 @@ import torch
 import trimesh
 from PIL import Image, ImageDraw, ImageFont
 
-from utils import logging, structs, geometry, misc
+from foundpose_utils import logging, structs, geometry, misc
 
-from utils import renderer_base, json_util
+from foundpose_utils import renderer_base, json_util
 
 logger: logging.Logger = logging.get_logger()
 

@@ -6,8 +6,8 @@ import time
 import numpy as np
 import trimesh
 import pyrender
-from utils.misc import tensor_to_array
-from utils import renderer_base, structs
+from foundpose_utils.misc import tensor_to_array
+from foundpose_utils import renderer_base, structs
 
 from PIL import Image
 import os.path as osp

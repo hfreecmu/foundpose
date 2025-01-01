@@ -8,14 +8,14 @@ import numpy as np
 import bop_toolkit_lib.config as bop_config
 from bop_toolkit_lib import dataset_params
 
-from utils import misc, logging, json_util
+from foundpose_utils import misc, logging, json_util
 
 logger: logging.Logger = logging.get_logger()
 
 # Load the estimated poses from the json file
 object_dataset = "lmo"
 version = "v1"
-object_lids = None
+object_lids = [1, 5, 6, 8, 9, 10, 11, 12]
 
 signature = misc.slugify(object_dataset) + "_{}".format(version)
 output_dir = os.path.join(

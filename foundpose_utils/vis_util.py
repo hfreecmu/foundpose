@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 import trimesh
 
-from utils import (
+from foundpose_utils import (
     projector_util,
     repre_util,
     vis_base_util,
@@ -21,7 +21,7 @@ from utils import (
     geometry
 )
 
-from utils.misc import tensor_to_array, array_to_tensor
+from foundpose_utils.misc import tensor_to_array, array_to_tensor
 
 logger: logging.Logger = logging.get_logger()
 
@@ -351,6 +351,7 @@ def vis_inference_results(
                 bg_opacity=1.0,
                 all_in_one=True,
             )[0]
+
             vis = vis_base_util.add_contour_overlay(
                 vis,
                 vis_coarse_est_pose,
@@ -383,6 +384,7 @@ def vis_inference_results(
             bg_opacity=1.0,
             all_in_one=True,
         )
+
         vis = vis_base_util.add_contour_overlay(
             vis,
             vis_est_pose,
@@ -394,11 +396,11 @@ def vis_inference_results(
 
         if not vis_for_paper:
             txt = "Poses (R: GT, B: coarse, G: final)"
-            if "mssd" in pose_eval_dict:
+            if pose_eval_dict is not None and "mssd" in pose_eval_dict:
                 mssd = pose_eval_dict["mssd"]
                 mssd_n = pose_eval_dict["normalized_mssd"]
                 txt += f"\nMSSD: {mssd:.2f} ({mssd_n:.2f})"
-            if "mspd" in pose_eval_dict:
+            if pose_eval_dict is not None and "mspd" in pose_eval_dict:
                 mspd = pose_eval_dict["mspd"]
                 txt += f"\nMSPD: {mspd:.2f}"
             vis_base_util.add_text(0, txt)
@@ -597,7 +599,7 @@ def vis_inference_results(
     # ROW 4: Visualize inlier matches w.r.t. estimated pose
     # ------------------------------------------------------------------------------
 
-    if not vis_for_paper:
+    if not vis_for_paper and pose_eval_dict is not None:
         inliers_est = pose_eval_dict["inliers_est"]
         inliers_est_err = pose_eval_dict["inliers_est_err"]
 

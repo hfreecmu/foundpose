@@ -2,7 +2,7 @@
 
 import math
 
-from utils import misc
+from foundpose_utils import misc
 import numpy as np
 
 from scipy.spatial.transform import Rotation
