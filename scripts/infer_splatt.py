@@ -618,7 +618,7 @@ def infer(opts: InferOpts) -> None:
                     ext = ".png" if opts.vis_for_paper else ".jpg"
                     vis_path = os.path.join(
                         output_dir,
-                        f"{basename}_{object_lid}_{hypothesis_id}{ext}",
+                        f"{basename}{ext}",
                     )
                     inout.save_im(vis_path, vis_grid)
                     logger.info(f"Visualization saved to {vis_path}")
@@ -636,15 +636,34 @@ def infer(opts: InferOpts) -> None:
                             intrinsics, dims, R.T, t)
     
                 image = (res_pkg['render'].clamp(0.0, 1.0).cpu().numpy().transpose(1, 2, 0)*255).round().astype(np.uint8)
-                vis_im = np.hstack(((orig_image_np_hwc*255).astype(np.uint8), image))
+                mask = np.any(image > 0, axis=-1)
+                image[~mask] = 0
+
+                orig_image = (orig_image_np_hwc*255).astype(np.uint8)
+
+                overlay_im = (orig_image.astype(float) / 255.0)*0.5 + (image.astype(float) / 255.0)*0.5
+                overlay_im = (overlay_im.clip(0.0, 1.0) * 255).round().astype(np.uint8)
+
+                vis_im = np.hstack((orig_image, image, overlay_im))
                 vis_im = cv2.cvtColor(vis_im, cv2.COLOR_RGB2BGR)
                 # cv2.imshow('test', vis_im)
                 # cv2.waitKey(1)
                 vis_path = os.path.join(
                         vis_dir,
-                        f"{basename}_{object_lid}_{hypothesis_id}{ext}",
+                        f"{basename}{ext}",
                     )
                 cv2.imwrite(vis_path, vis_im)
+                
+                pose_path = os.path.join(
+                        output_dir,
+                        f"{basename}.npy",
+                    )
+                
+                M = np.eye(4)
+                M[0:3, 0:3] = R
+                M[0:3, 3] = t
+                np.savetxt(pose_path, M)
+
 
     # Empty unused GPU cache variables.
     if device == "cuda":
