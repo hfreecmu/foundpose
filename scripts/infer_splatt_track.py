@@ -42,10 +42,13 @@ from foundpose_utils import (
     logging,
     misc,
     structs,
+    cluster_util,
+    template_util
 )
 
 from foundpose_utils.structs import AlignedBox2f, PinholePlaneCameraModel
 from foundpose_utils.misc import warp_depth_image, warp_image
+from foundpose_utils.renderer_base import RenderType
 
 import imageio
 
@@ -135,7 +138,12 @@ class InferOpts(NamedTuple):
 
     splat_path: str = None
 
-    # tempoaray for debug
+    # I added and am hardcoding for now
+    features_patch_size: int = 14
+    ssaa_factor: float = 2.0
+    cluster_num: int = 2048
+
+    # except for this one
     template_desc_opts: Optional[repre_util.TemplateDescOpts] = None
     debug_desc_opts: Optional[repre_util.TemplateDescOpts] = None
 
@@ -276,6 +284,40 @@ def infer(opts: InferOpts) -> None:
         cell_size=opts.grid_cell_size,
     )
     grid_points = grid_points.to(device)
+
+    # this is for repre
+    datasets_path = bop_config.datasets_path
+    bop_camera = dataset_params.get_camera_params(datasets_path=datasets_path, dataset_name=opts.object_dataset)
+    bop_camera_width = bop_camera['im_size'][0]
+    bop_camera_height = bop_camera['im_size'][1]
+    max_image_side = max(bop_camera_width, bop_camera_height)
+    image_side = opts.features_patch_size * int(
+        max_image_side / opts.features_patch_size
+    )
+    camera_model = PinholePlaneCameraModel(
+        width=image_side,
+        height=image_side,
+        f=(bop_camera['K'][0,0], bop_camera['K'][1,1]),
+        c=(
+            bop_camera['K'][0,2] - 0.5 * (bop_camera_width - image_side),
+            bop_camera['K'][1,2] - 0.5 * (bop_camera_height - image_side),
+        )
+    )
+    render_camera_model = PinholePlaneCameraModel(
+        width=int(camera_model.width * opts.ssaa_factor),
+        height=int(camera_model.height * opts.ssaa_factor),
+        f=(
+            camera_model.f[0] * opts.ssaa_factor,
+            camera_model.f[1] * opts.ssaa_factor,
+        ),
+        c=(
+            camera_model.c[0] * opts.ssaa_factor,
+            camera_model.c[1] * opts.ssaa_factor,
+        )
+    )
+
+    match_top_n_templates = opts.match_top_n_templates
+    #
 
     filenames = []
     for filename in os.listdir(color_dir):
@@ -437,11 +479,12 @@ def infer(opts: InferOpts) -> None:
             template_matching_type=opts.match_template_type,
             template_knn_indices=template_knn_indices,
             feat_matching_type=opts.match_feat_matching_type,
-            top_n_templates=opts.match_top_n_templates,
+            top_n_templates=match_top_n_templates,
             top_k_buddies=opts.match_top_k_buddies,
             visual_words_knn_index=visual_words_knn_index,
             debug=opts.debug,
         )
+
 
         timer.elapsed("Time for corresp")
         timer.start()
@@ -631,8 +674,8 @@ def infer(opts: InferOpts) -> None:
                     intrinsics, dims, R.T, t)
 
         image = (res_pkg['render'].clamp(0.0, 1.0).cpu().numpy().transpose(1, 2, 0)*255).round().astype(np.uint8)
-        # mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
-        # depth = res_pkg['depth'].squeeze(0).cpu().numpy() * 1000
+        mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
+        depth = res_pkg['depth'].squeeze(0).cpu().numpy() * 1000
         # features = res_pkg['feature_map'].cpu().numpy()
         # TODO maybe one more pnp iteration?
 
@@ -643,8 +686,8 @@ def infer(opts: InferOpts) -> None:
 
         vis_im = np.hstack((orig_image, image, overlay_im))
         vis_im = cv2.cvtColor(vis_im, cv2.COLOR_RGB2BGR)
-        # cv2.imshow('test', vis_im)
-        # cv2.waitKey(1)
+        cv2.imshow('test', vis_im)
+        cv2.waitKey(1)
         vis_path = os.path.join(
                 vis_dir,
                 f"{basename}{ext}",
@@ -660,6 +703,284 @@ def infer(opts: InferOpts) -> None:
         M[0:3, 0:3] = R
         M[0:3, 3] = t
         np.savetxt(pose_path, M)
+
+        # ##########################
+        # now make repre
+        intrinsics = [render_camera_model.f[0], render_camera_model.f[1],
+                          render_camera_model.c[0], render_camera_model.c[1]]
+        dims = [render_camera_model.height, render_camera_model.width]
+
+        res_pkg = my_render(gaussians, pipeline, background,
+                            intrinsics, dims, R.T, t)
+
+        image = (res_pkg['render'].clamp(0.0, 1.0).cpu().numpy().transpose(1, 2, 0)*255).round().astype(np.uint8)
+        depth = res_pkg['depth'].cpu().numpy().squeeze(0) * 1000
+        mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
+        # cv2.imshow('test', cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+        # cv2.waitKey(0)
+
+        output = {}
+        output[RenderType.COLOR] = image
+        output[RenderType.DEPTH] = depth
+        output[RenderType.MASK] = mask
+
+        ys, xs = output[RenderType.MASK].nonzero()
+        box = np.array(misc.calc_2d_box(xs, ys))
+        object_box = AlignedBox2f(
+            left=box[0],
+            top=box[1],
+            right=box[2],
+            bottom=box[3],
+        )
+
+        if (
+            object_box.left == 0
+            or object_box.top == 0
+            or object_box.right == dims[1] - 1
+            or object_box.bottom == dims[0] - 1
+        ):
+            raise ValueError("The model does not fit the viewport.")
+        
+        trans_m2c = structs.RigidTransform(R=R, t=t[:, None]*1000)
+        R_c2m = trans_m2c.R.T
+        trans_c2m = structs.RigidTransform(R=R_c2m, t=-R_c2m.dot(trans_m2c.t))
+        trans_c2m_matrix = misc.get_rigid_matrix(trans_c2m)
+        render_camera_model_c2w = PinholePlaneCameraModel(
+                width=render_camera_model.width,
+                height=render_camera_model.height,
+                f=render_camera_model.f,
+                c=render_camera_model.c,
+                T_world_from_eye=trans_c2m_matrix,
+            )
+        
+        if opts.crop:
+            # Get box for cropping.
+            crop_box = misc.calc_crop_box(
+                box=object_box,
+                make_square=True,
+            )
+
+            # Construct a virtual camera focused on the box.
+            crop_camera_model_c2w = misc.construct_crop_camera(
+                box=crop_box,
+                camera_model_c2w=render_camera_model_c2w,
+                viewport_size=(
+                    int(opts.crop_size[0] * opts.ssaa_factor),
+                    int(opts.crop_size[1] * opts.ssaa_factor),
+                ),
+                viewport_rel_pad=opts.crop_rel_pad,
+            )
+
+            new_trans_c2m_matrix = crop_camera_model_c2w.T_world_from_eye
+            new_R_c2m = new_trans_c2m_matrix[0:3, 0:3]
+            new_t_c2m = new_trans_c2m_matrix[0:3, 3]
+            new_R = new_R_c2m.T
+            new_t = -new_R @ new_t_c2m
+
+            R = new_R
+            t = new_t / 1000
+
+            crop_intrinsics = [crop_camera_model_c2w.f[0], crop_camera_model_c2w.f[1],
+                                crop_camera_model_c2w.c[0], crop_camera_model_c2w.c[1]]
+            crop_dims = [crop_camera_model_c2w.height, crop_camera_model_c2w.width]
+            
+            del res_pkg
+            torch.cuda.empty_cache()
+
+            res_pkg = my_render(gaussians, pipeline, background,
+                                crop_intrinsics, crop_dims, R.T, t)
+        
+            image = (res_pkg['render'].clamp(0.0, 1.0).cpu().numpy().transpose(1, 2, 0)*255).round().astype(np.uint8)
+            depth = res_pkg['depth'].cpu().numpy().squeeze(0) * 1000
+            mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
+
+            output = {}
+            output[RenderType.COLOR] = image
+            output[RenderType.DEPTH] = depth
+            output[RenderType.MASK] = mask
+
+            # cv2.imshow('test', cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+            # cv2.waitKey(0)
+
+            # The virtual camera is becoming the main camera.
+            camera_model_c2w = crop_camera_model_c2w.copy()
+            scale_factor = opts.crop_size[0] / float(
+                crop_camera_model_c2w.width
+            )
+            camera_model_c2w.width = opts.crop_size[0]
+            camera_model_c2w.height = opts.crop_size[1]
+            camera_model_c2w.c = (
+                camera_model_c2w.c[0] * scale_factor,
+                camera_model_c2w.c[1] * scale_factor,
+            )
+            camera_model_c2w.f = (
+                camera_model_c2w.f[0] * scale_factor,
+                camera_model_c2w.f[1] * scale_factor,
+            )
+
+        # In case we are not cropping.
+        else:
+            raise RuntimeError('only crop supported')
+        
+        ys, xs = output[RenderType.MASK].nonzero()
+        box = np.array(misc.calc_2d_box(xs, ys))
+        object_box = AlignedBox2f(
+            left=box[0],
+            top=box[1],
+            right=box[2],
+            bottom=box[3],
+        )
+
+        ### above was template, below is gen_repre
+        camera_sample = camera_model_c2w.to_json()
+        camera_world_from_cam = PinholePlaneCameraModel(
+                width=camera_sample["ImageSizeX"],
+                height=camera_sample["ImageSizeY"],
+                f=(camera_sample["fx"],camera_sample["fy"]),
+                c=(camera_sample["cx"],camera_sample["cy"]),
+                T_world_from_eye=np.array(camera_sample["T_WorldFromCamera"])
+            )
+
+        image_arr = output[RenderType.COLOR]
+        depth_image_arr = output[RenderType.DEPTH]
+        mask_image_arr = output[RenderType.MASK]
+
+        image_chw = array_to_tensor(image_arr).to(torch.float32).permute(2,0,1).to(device) / 255.0
+        depth_image_hw = array_to_tensor(depth_image_arr).to(torch.float32).to(device)
+        object_mask_modal = array_to_tensor(mask_image_arr).to(torch.float32).to(device)
+        
+        object_pose_rigid_matrix = np.eye(4)
+        T_world_from_model = (
+            array_to_tensor(object_pose_rigid_matrix)
+            .to(torch.float32)
+            .to(device)
+        )
+        T_model_from_world = torch.linalg.inv(T_world_from_model)
+        T_world_from_camera = (
+            array_to_tensor(camera_world_from_cam.T_world_from_eye)
+            .to(torch.float32)
+            .to(device)
+        )
+        T_model_from_camera = torch.matmul(T_model_from_world, T_world_from_camera)
+
+        (
+            feat_vectors,
+            feat_to_vertex_ids,
+            vertices_in_model,
+        ) = feature_util.get_visual_features_registered_in_3d(
+            image_chw=image_chw,
+            depth_image_hw=depth_image_hw,
+            object_mask=object_mask_modal,
+            camera=camera_world_from_cam,
+            T_model_from_camera=T_model_from_camera,
+            extractor=extractor,
+            grid_cell_size=opts.grid_cell_size,
+            debug=False,
+        )
+
+        mock_template_id = 0
+        feat_to_template_ids = mock_template_id * torch.ones(
+            feat_vectors.shape[0], dtype=torch.int32, device=device
+        )
+
+        image_chw_uint8 = (image_chw * 255).to(torch.uint8)
+
+        new_camera_model = camera_world_from_cam.copy()
+        new_camera_model.extrinsics = torch.linalg.inv(T_model_from_camera)
+
+        if not len(repre.feat_raw_projectors) == 1:
+            raise RuntimeError('exprected one raw proj')
+        
+        pca_projector = repre.feat_raw_projectors[0]
+        feat_raw_projectors = repre.feat_raw_projectors
+        feat_vis_projectors = repre.feat_vis_projectors
+
+        repre = repre_util.FeatureBasedObjectRepre(
+            vertices=torch.cat([vertices_in_model]),
+            feat_vectors=torch.cat([feat_vectors]),
+            feat_opts=repre_util.FeatureOpts(extractor_name=opts.extractor_name),
+            feat_to_vertex_ids=torch.cat([feat_to_vertex_ids]),
+            feat_to_template_ids=torch.cat([feat_to_template_ids]),
+            templates=torch.stack([image_chw_uint8]),
+            template_cameras_cam_from_model=[new_camera_model],
+        )
+
+        feat_vectors = repre.feat_vectors
+        feat_vectors = pca_projector.transform(feat_vectors)
+
+        cluster_num = min(opts.cluster_num, feat_vectors.shape[0])
+
+        centroids, cluster_ids, centroid_distances = cluster_util.kmeans(
+            samples=feat_vectors,
+            num_centroids=cluster_num,
+            verbose=False,
+        )
+
+        repre.feat_cluster_centroids = centroids
+        repre.feat_to_cluster_ids = cluster_ids
+
+        if opts.debug_desc_opts is not None:
+            repre.template_desc_opts = opts.debug_desc_opts
+
+            # Calculate tf-idf descriptors.
+            if opts.template_desc_opts.desc_type == "tfidf":
+
+                assert feat_vectors is not None
+                assert repre.feat_cluster_centroids is not None
+                assert repre.feat_to_cluster_ids is not None
+                assert repre.feat_to_template_ids is not None
+                assert repre.templates is not None
+
+                repre.template_descs, repre.feat_cluster_idfs = (
+                    template_util.calc_tfidf_descriptors(
+                        feat_vectors=feat_vectors,
+                        feat_words=repre.feat_cluster_centroids,
+                        feat_to_word_ids=repre.feat_to_cluster_ids,
+                        feat_to_template_ids=repre.feat_to_template_ids,
+                        num_templates=len(repre.templates),
+                        tfidf_knn_k=opts.template_desc_opts.tfidf_knn_k,
+                        tfidf_soft_assign=opts.template_desc_opts.tfidf_soft_assign,
+                        tfidf_soft_sigma_squared=opts.template_desc_opts.tfidf_soft_sigma_squared,
+                    )
+                )
+
+            else:
+                raise ValueError(
+                    f"Unknown template descriptor type: {opts.template_desc_opts.desc_type}"
+                )
+
+        repre.feat_raw_projectors = feat_raw_projectors
+        repre.feat_vis_projectors = feat_vis_projectors
+        repre.feat_vectors = feat_vectors
+
+        repre_np = repre_util.convert_object_repre_to_numpy(repre)
+
+        # Build a kNN index from object feature vectors.
+        visual_words_knn_index = None
+        if opts.match_template_type == "tfidf":
+            visual_words_knn_index = knn_util.KNN(
+                k=repre.template_desc_opts.tfidf_knn_k,
+                metric=repre.template_desc_opts.tfidf_knn_metric
+            )
+            visual_words_knn_index.fit(repre.feat_cluster_centroids)
+
+        # Build per-template KNN index with features from that template.
+        template_knn_indices = []
+        if opts.match_feat_matching_type == "cyclic_buddies":
+            for template_id in range(len(repre.template_cameras_cam_from_model)):
+                tpl_feat_mask = repre.feat_to_template_ids == template_id
+                tpl_feat_ids = torch.nonzero(tpl_feat_mask).flatten()
+
+                template_feats = repre.feat_vectors[tpl_feat_ids]
+
+                # Build knn index for object features.
+                template_knn_index = knn_util.KNN(k=1, metric="l2")
+                template_knn_index.fit(template_feats.cpu())
+                template_knn_indices.append(template_knn_index)
+
+        match_top_n_templates = 1
+        # ##################################
+
 
         # Empty unused GPU cache variables.
         if device == "cuda":
