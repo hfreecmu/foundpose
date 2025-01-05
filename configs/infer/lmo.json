@@ -11,26 +11,19 @@
         "use_detections": true,
         "extractor_name": "dinov2_version=vits14-reg_stride=14_facet=token_layer=9_logbin=0_norm=1",
         "match_template_type": "tfidf",
-        "match_top_n_templates": 5,
         "match_feat_matching_type": "cyclic_buddies",
         "match_top_k_buddies": 300,
         "pnp_type": "opencv",
-        "pnp_ransac_iter": 400,
-        "pnp_inlier_thresh": 10.0,
         "final_pose_type": "best_coarse",
         "num_preds_factor": 1,
         "vis_results": true,
         "splat_path": "/home/hfreeman/harry_ws/repos/feature-3dgs/output/pruners/mask.ply",
         "vis_for_paper": false,
 
-        "template_desc_opts": {
-            "desc_type": "tfidf"
-        },
-        "debug_desc_opts": {
-            "desc_type": "tfidf",
-            "tfidf_knn_k": 1
-        },
+        "pnp_ransac_iter": 1000,
+        "pnp_inlier_thresh": 8.0,
 
-        "grid_cell_size": 7.0
+        "match_top_n_templates": 5,
+        "grid_cell_size": 14.0
     }
 }

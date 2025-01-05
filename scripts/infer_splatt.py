@@ -42,12 +42,16 @@ from foundpose_utils import (
     logging,
     misc,
     structs,
+    template_util,
 )
 
 from foundpose_utils.structs import AlignedBox2f, PinholePlaneCameraModel
 from foundpose_utils.misc import warp_depth_image, warp_image
 
 import imageio
+from scipy.spatial.transform import Rotation
+from scipy.interpolate import RectBivariateSpline
+import copy
 
 ###
 from scene import GaussianModel
@@ -57,6 +61,10 @@ from gaussian_renderer import render
 from argparse import ArgumentParser
 from arguments import PipelineParams
 ###
+
+logger: logging.Logger = logging.get_logger()
+
+# TODO should probably switch all these to use camera used to train splat?
 
 def my_render(gaussians, pipeline, background, intrinsics, dims, R, T):
     fx, fy, cx, cy = intrinsics
@@ -82,9 +90,16 @@ def my_render(gaussians, pipeline, background, intrinsics, dims, R, T):
     res_pkg = render(cam, gaussians, pipeline, background)
     return res_pkg
 
+def rotation_distance(rot1, rot2) -> float:
+    rot1 = Rotation.from_matrix(rot1)
+    rot2 = Rotation.from_matrix(rot2)
 
-logger: logging.Logger = logging.get_logger()
-
+    # Compute the relative rotation
+    relative_rotation = rot1.inv() * rot2
+    
+    # Convert to angle-axis to get the geodesic distance
+    angle = relative_rotation.magnitude()
+    return angle
 
 class InferOpts(NamedTuple):
     """Options that can be specified via the command line."""
@@ -133,12 +148,15 @@ class InferOpts(NamedTuple):
     vis_for_paper: bool = True
     debug: bool = True
 
+    # hard coding for template render
+    features_patch_size: int = 14
+    ssaa_factor: float = 2.0
+
     splat_path: str = None
 
-    # tempoaray for debug
-    template_desc_opts: Optional[repre_util.TemplateDescOpts] = None
-    debug_desc_opts: Optional[repre_util.TemplateDescOpts] = None
+    rot_thresh: float = 60.0
 
+# DATA_DIR = '/home/hfreeman/harry_ws/gopro/datasets/simple_manip/0_pruner_rotate'
 DATA_DIR = '/home/hfreeman/Downloads/feat_test/bundlesdf'
 def infer(opts: InferOpts) -> None:
 
@@ -208,9 +226,10 @@ def infer(opts: InferOpts) -> None:
         repre_dir=repre_dir,
         tensor_device=device,
     )
+    repre_orig = copy.deepcopy(repre)
 
     logger.info("Object representation loaded.")
-    repre_np = repre_util.convert_object_repre_to_numpy(repre)
+    # repre_np = repre_util.convert_object_repre_to_numpy(repre)
 
     # Build a kNN index from object feature vectors.
     visual_words_knn_index = None
@@ -236,6 +255,8 @@ def infer(opts: InferOpts) -> None:
             template_knn_index = knn_util.KNN(k=1, metric="l2")
             template_knn_index.fit(template_feats.cpu())
             template_knn_indices.append(template_knn_index)
+
+        template_knn_indices_orig = copy.deepcopy(template_knn_indices)
         logger.info("Per-template KNN indices built.")
 
     logging.log_heading(
@@ -259,12 +280,7 @@ def infer(opts: InferOpts) -> None:
     K_path = os.path.join(DATA_DIR, 'cam_K.txt')
 
     K = np.loadtxt(K_path)
-    orig_camera_c2w = PinholePlaneCameraModel(
-        width=640,
-        height=480,
-        f=(K[0,0], K[1,1]),
-        c=(K[0,2], K[1,2])
-    )
+    orig_camera_c2w = None
 
     # Generate grid points at which to sample the feature vectors.
     if opts.crop:
@@ -277,6 +293,40 @@ def infer(opts: InferOpts) -> None:
     )
     grid_points = grid_points.to(device)
 
+    ### for render template
+    bop_camera = dataset_params.get_camera_params(datasets_path=bop_config.datasets_path, dataset_name=opts.object_dataset)
+    bop_camera_width = bop_camera['im_size'][0]
+    bop_camera_height = bop_camera['im_size'][1]
+    max_image_side = max(bop_camera_width, bop_camera_height)
+    image_side = opts.features_patch_size * int(
+        max_image_side / opts.features_patch_size
+    )
+
+    camera_model = PinholePlaneCameraModel(
+        width=image_side,
+        height=image_side,
+        f=(bop_camera['K'][0,0], bop_camera['K'][1,1]),
+        c=(
+            bop_camera['K'][0,2] - 0.5 * (bop_camera_width - image_side),
+            bop_camera['K'][1,2] - 0.5 * (bop_camera_height - image_side),
+        )
+    )
+
+    render_camera_model = PinholePlaneCameraModel(
+        width=int(camera_model.width * opts.ssaa_factor),
+        height=int(camera_model.height * opts.ssaa_factor),
+        f=(
+            camera_model.f[0] * opts.ssaa_factor,
+            camera_model.f[1] * opts.ssaa_factor,
+        ),
+        c=(
+            camera_model.c[0] * opts.ssaa_factor,
+            camera_model.c[1] * opts.ssaa_factor,
+        )
+    )
+
+    ###
+
     filenames = []
     for filename in os.listdir(color_dir):
         if not (filename.endswith('.png') or filename.endswith('.jpg')):
@@ -286,8 +336,14 @@ def infer(opts: InferOpts) -> None:
 
     filenames = sorted(filenames)
 
+    prev_trans = None
     for filename in filenames:
         
+
+        identifier = int(filename.split('.')[0])
+
+        repre_np = repre_util.convert_object_repre_to_numpy(repre)
+
         timer.start()
 
         basename = filename.replace('.png', '').replace('.jpg', '')
@@ -310,6 +366,14 @@ def infer(opts: InferOpts) -> None:
                 bottom=box[3],
             )
         
+        if orig_camera_c2w is None:
+            orig_camera_c2w = PinholePlaneCameraModel(
+                width=orig_image_np_hwc.shape[1],
+                height=orig_image_np_hwc.shape[0],
+                f=(K[0,0], K[1,1]),
+                c=(K[0,2], K[1,2])
+            )
+
         # Optional cropping.
         if not opts.crop:
             camera_c2w = orig_camera_c2w
@@ -381,6 +445,7 @@ def infer(opts: InferOpts) -> None:
         )
 
         # Subsample query points if we have too many.
+        orig_query_points = torch.clone(query_points).cpu().numpy()
         if query_points.shape[0] > opts.max_num_queries:
             perm = torch.randperm(query_points.shape[0])
             query_points = query_points[perm[: opts.max_num_queries]]
@@ -489,19 +554,66 @@ def infer(opts: InferOpts) -> None:
                         "corresp_id": corresp_id,
                         "quality": quality_coarse,
                         "inliers": inliers_coarse,
+                        "template_score": corresp_curr['template_score'].item()
                     }
                 )
+
+        if prev_trans is not None:
+            unfilt_coarse_poses = coarse_poses
+            coarse_poses = []
+            debug_rot_dists = []
+            for cp in unfilt_coarse_poses:
+                cp_pose_est_m2c = structs.ObjectPose(
+                    R=cp["R_m2c"], t=cp["t_m2c"]
+                )
+                
+                cp_trans_c2w = camera_c2w.T_world_from_eye
+                cp_trans_m2w = cp_trans_c2w.dot(misc.get_rigid_matrix(cp_pose_est_m2c))
+
+                curr_rot = cp_trans_m2w[0:3, 0:3]
+                prev_rot = prev_trans[0:3, 0:3]
+
+                rot_dist = rotation_distance(curr_rot, prev_rot) * 180 / np.pi
+                debug_rot_dists.append(rot_dist)
+
+                if rot_dist < opts.rot_thresh:
+                    coarse_poses.append(cp)
+
+        if len(coarse_poses) == 0:
+            breakpoint()
+            raise RuntimeError('need a coarse pose', filename)
 
         # Find the best coarse pose.
         best_coarse_quality = None
         best_coarse_pose_id = 0
-        for coarse_pose_id, pose in enumerate(coarse_poses):
-            if (
-                best_coarse_quality is None
-                or pose["quality"] > best_coarse_quality
-            ):
-                best_coarse_pose_id = coarse_pose_id
-                best_coarse_quality = pose["quality"]
+
+        qualities = np.array([pose['quality'] for pose in coarse_poses])
+        template_scores = np.array([pose['template_score'] for pose in coarse_poses])
+
+        qual_inds = np.argsort(-qualities)
+        ts_inds = np.argsort(-template_scores)
+
+        if qual_inds[0] == template_scores[0]:
+            best_coarse_pose_id = qual_inds[0]
+        else:
+            top_qual_ind = qual_inds[0]
+            top_ts_ind = ts_inds[0]
+
+            quals_rat = qualities[top_qual_ind] / qualities[top_ts_ind]
+            if True or quals_rat >= 1.25:
+                best_coarse_pose_id = top_qual_ind
+            else:
+                best_coarse_pose_id = top_ts_ind
+
+        best_coarse_quality = coarse_poses[best_coarse_pose_id]['quality']
+
+        # for coarse_pose_id, pose in enumerate(coarse_poses):
+        #     if (
+        #         best_coarse_quality is None
+        #         or pose["quality"] > best_coarse_quality
+        #     ):
+        #         best_coarse_pose_id = coarse_pose_id
+        #         best_coarse_quality = pose["quality"]
 
         timer.elapsed("Time for coarse pose")
 
@@ -512,8 +624,8 @@ def infer(opts: InferOpts) -> None:
         ]:
 
             # If no successful coarse pose, continue.
-            if len(coarse_poses) == 0:
-                continue
+            # if len(coarse_poses) == 0:
+            #     raise RuntimeError('need a coarse pose', filename)
 
             # Select the refined pose corresponding to the best coarse pose as the final pose.
             final_pose = coarse_poses[best_coarse_pose_id]
@@ -525,10 +637,6 @@ def infer(opts: InferOpts) -> None:
 
         # Visualizations and saving of results.
         vis_tiles = []
-
-        # Increment hypothesis id by one for each found pose hypothesis.
-        pose_m2w = None
-        pose_m2w_coarse = None
 
         # Express the estimated pose as an m2w transformation.
         pose_est_m2c = structs.ObjectPose(
@@ -593,7 +701,7 @@ def infer(opts: InferOpts) -> None:
                     pose_eval_dict=None,
                     corresp_top_n=opts.vis_corresp_top_n,
                     inlier_thresh=(opts.pnp_inlier_thresh),
-                    object_pose_m2w_coarse=pose_m2w_coarse,
+                    object_pose_m2w_coarse=None,
                     pose_eval_dict_coarse=None,
                     # For paper visualizations:
                     vis_for_paper=opts.vis_for_paper,
@@ -621,9 +729,6 @@ def infer(opts: InferOpts) -> None:
         R = trans_m2w[:3, :3]
         t = trans_m2w[:3, 3] / 1000
 
-        # intrinsics = [camera_c2w.f[0], camera_c2w.f[1],
-        #               camera_c2w.c[0], camera_c2w.c[1]]
-        # dims = [camera_c2w.height, camera_c2w.width]
         intrinsics = [orig_camera_c2w.f[0], orig_camera_c2w.f[1],
                         orig_camera_c2w.c[0], orig_camera_c2w.c[1]]
         dims = [orig_camera_c2w.height, orig_camera_c2w.width]
@@ -631,10 +736,7 @@ def infer(opts: InferOpts) -> None:
                     intrinsics, dims, R.T, t)
 
         image = (res_pkg['render'].clamp(0.0, 1.0).cpu().numpy().transpose(1, 2, 0)*255).round().astype(np.uint8)
-        # mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
-        # depth = res_pkg['depth'].squeeze(0).cpu().numpy() * 1000
-        # features = res_pkg['feature_map'].cpu().numpy()
-        # TODO maybe one more pnp iteration?
+
 
         orig_image = (orig_image_np_hwc*255).astype(np.uint8)
 
@@ -660,6 +762,209 @@ def infer(opts: InferOpts) -> None:
         M[0:3, 0:3] = R
         M[0:3, 3] = t
         np.savetxt(pose_path, M)
+
+        prev_trans = trans_m2w
+
+        ### we will try rendering a new template
+        template_intrinsics = [render_camera_model.f[0], render_camera_model.f[1],
+                              render_camera_model.c[0], render_camera_model.c[1]]
+        template_dims = [render_camera_model.height, render_camera_model.width]
+        del res_pkg
+        torch.cuda.empty_cache()
+        t[-1] = 0.6 # TODO param this
+        res_pkg = my_render(gaussians, pipeline, background,
+                            template_intrinsics, template_dims, R.T, t)
+        image = (res_pkg['render'].clamp(0.0, 1.0).cpu().numpy().transpose(1, 2, 0)*255).round().astype(np.uint8)
+        depth = res_pkg['depth'].cpu().numpy().squeeze(0) * 1000
+        mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
+
+        ys, xs = mask.nonzero()
+        box = np.array(misc.calc_2d_box(xs, ys))
+        object_box = AlignedBox2f(
+            left=box[0],
+            top=box[1],
+            right=box[2],
+            bottom=box[3],
+        )
+
+        if (
+            object_box.left == 0
+            or object_box.top == 0
+            or object_box.right == dims[1] - 1
+            or object_box.bottom == dims[0] - 1
+        ):
+            raise ValueError("The model does not fit the viewport.")
+        
+
+        trans_m2c = structs.RigidTransform(R=R, t=t[:, None]*1000)
+        R_c2m = trans_m2c.R.T
+        trans_c2m = structs.RigidTransform(R=R_c2m, t=-R_c2m.dot(trans_m2c.t))
+        trans_c2m_matrix = misc.get_rigid_matrix(trans_c2m)
+        render_camera_model_c2w = PinholePlaneCameraModel(
+                width=render_camera_model.width,
+                height=render_camera_model.height,
+                f=render_camera_model.f,
+                c=render_camera_model.c,
+                T_world_from_eye=trans_c2m_matrix,
+            )
+
+        if opts.crop:
+            crop_box = misc.calc_crop_box(
+                box=object_box,
+                make_square=True,
+            )
+
+            crop_camera_model_c2w = misc.construct_crop_camera(
+                box=crop_box,
+                camera_model_c2w=render_camera_model_c2w,
+                viewport_size=(
+                    int(opts.crop_size[0] * opts.ssaa_factor),
+                    int(opts.crop_size[1] * opts.ssaa_factor),
+                ),
+                viewport_rel_pad=opts.crop_rel_pad,
+            )
+
+            new_trans_c2m_matrix = crop_camera_model_c2w.T_world_from_eye
+            new_R_c2m = new_trans_c2m_matrix[0:3, 0:3]
+            new_t_c2m = new_trans_c2m_matrix[0:3, 3]
+            new_R = new_R_c2m.T
+            new_t = -new_R @ new_t_c2m
+
+            R = new_R
+            t = new_t / 1000
+
+            crop_intrinsics = [crop_camera_model_c2w.f[0], crop_camera_model_c2w.f[1],
+                                crop_camera_model_c2w.c[0], crop_camera_model_c2w.c[1]]
+            crop_dims = [crop_camera_model_c2w.height, crop_camera_model_c2w.width]
+            
+            del res_pkg
+            torch.cuda.empty_cache()
+
+            res_pkg = my_render(gaussians, pipeline, background,
+                                crop_intrinsics, crop_dims, R.T, t)
+        
+            image = (res_pkg['render'].clamp(0.0, 1.0).cpu().numpy().transpose(1, 2, 0)*255).round().astype(np.uint8)
+            depth = res_pkg['depth'].cpu().numpy().squeeze(0) * 1000
+            mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
+
+            camera_model_c2w = crop_camera_model_c2w.copy()
+            scale_factor = opts.crop_size[0] / float(
+                crop_camera_model_c2w.width
+            )
+            camera_model_c2w.width = opts.crop_size[0]
+            camera_model_c2w.height = opts.crop_size[1]
+            camera_model_c2w.c = (
+                camera_model_c2w.c[0] * scale_factor,
+                camera_model_c2w.c[1] * scale_factor,
+            )
+            camera_model_c2w.f = (
+                camera_model_c2w.f[0] * scale_factor,
+                camera_model_c2w.f[1] * scale_factor,
+            )
+
+        # In case we are not cropping.
+        else:
+            raise RuntimeError('only crop supported')
+        
+        if opts.ssaa_factor != 1.0:
+            ssaa_intrinsics = [camera_model_c2w.f[0], camera_model_c2w.f[1],
+                                camera_model_c2w.c[0], camera_model_c2w.c[1]]
+            ssaa_dims = [camera_model_c2w.height, camera_model_c2w.width]
+            
+
+            del res_pkg
+            torch.cuda.empty_cache()
+
+            res_pkg = my_render(gaussians, pipeline, background,
+                                ssaa_intrinsics, ssaa_dims, R.T, t)
+        
+            image = (res_pkg['render'].clamp(0.0, 1.0).cpu().numpy().transpose(1, 2, 0)*255).round().astype(np.uint8)
+            depth = res_pkg['depth'].cpu().numpy().squeeze(0) * 1000
+            mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
+        else:
+            pass
+
+        ys, xs = mask.nonzero()
+        box = np.array(misc.calc_2d_box(xs, ys))
+        object_box = AlignedBox2f(
+            left=box[0],
+            top=box[1],
+            right=box[2],
+            bottom=box[3],
+        )
+
+        # just naming convention change
+        camera_world_from_cam = camera_model_c2w
+        image_chw = array_to_tensor(image).to(torch.float32).permute(2,0,1).to(device) / 255.0
+        depth_image_hw = array_to_tensor(depth).to(torch.float32).to(device)
+        object_mask_modal = array_to_tensor(mask).to(torch.float32).to(device)
+
+        T_model_from_camera = (
+            array_to_tensor(camera_world_from_cam.T_world_from_eye)
+            .to(torch.float32)
+            .to(device)
+        )
+
+        (
+            feat_vectors,
+            feat_to_vertex_ids,
+            vertices_in_model,
+        ) = feature_util.get_visual_features_registered_in_3d(
+            image_chw=image_chw,
+            depth_image_hw=depth_image_hw,
+            object_mask=object_mask_modal,
+            camera=camera_world_from_cam,
+            T_model_from_camera=T_model_from_camera,
+            extractor=extractor,
+            grid_cell_size=opts.grid_cell_size,
+            debug=False,
+        )
+
+        feat_vectors = projector_util.project_features(
+                feat_vectors=feat_vectors,
+                projectors=repre.feat_raw_projectors,
+            ).contiguous()
+        
+        word_dists, word_ids = visual_words_knn_index.search(feat_vectors)
+
+        tfidf = template_util.calc_tfidf(
+            feature_word_ids=word_ids,
+            feature_word_dists=word_dists,
+            word_idfs=repre.feat_cluster_idfs,
+            soft_assignment=repre.template_desc_opts.tfidf_soft_assign,
+            soft_sigma_squared=repre.template_desc_opts.tfidf_soft_sigma_squared,
+        )
+        
+        prev_template_knn_index = knn_util.KNN(k=1, metric="l2")
+        prev_template_knn_index.fit(feat_vectors.cpu())
+
+        template_knn_indices = template_knn_indices_orig + [prev_template_knn_index]
+        repre = copy.deepcopy(repre_orig)
+
+        comb_vertices = torch.concat((repre.vertices, vertices_in_model))
+        comb_feat_vectors = torch.concat((repre.feat_vectors, feat_vectors))
+        comb_feat_to_vertex_ids = torch.concat((repre.feat_to_vertex_ids, feat_to_vertex_ids))
+        comb_feat_to_template_ids = torch.concat((repre.feat_to_template_ids,
+                                                  (repre.feat_to_template_ids.max().item() + 1) * \
+                                                  torch.ones(feat_vectors.shape[0], dtype=torch.int32, device=device)))
+        comb_feat_to_cluster_ids = None
+        comb_templates = torch.concat((repre.templates, (image_chw * 255).to(torch.uint8).unsqueeze(0)))
+        comb_template_cameras_from_model = repre.template_cameras_cam_from_model + [camera_world_from_cam.copy()]
+        comb_template_descs = torch.concat((repre.template_descs, tfidf.unsqueeze(0)))
+
+        repre.vertices = comb_vertices
+        repre.feat_vectors = comb_feat_vectors
+        repre.feat_to_vertex_ids = comb_feat_to_vertex_ids
+        repre.feat_to_template_ids = comb_feat_to_template_ids
+        repre.feat_to_cluster_ids = comb_feat_to_cluster_ids
+        repre.templates = comb_templates
+        repre.template_cameras_cam_from_model = comb_template_cameras_from_model
+        repre.template_descs = comb_template_descs
+
+        # cv2.imshow('test', cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+        # cv2.waitKey(0)
+        #breakpoint()
+        ###
 
         # Empty unused GPU cache variables.
         if device == "cuda":

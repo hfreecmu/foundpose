@@ -275,23 +275,6 @@ def synthesize_templates(opts: GenTemplatesOpts) -> None:
 
     timer.elapsed("Time for preparing object data")
 
-    # intrinsics = [camera_model.f[0], camera_model.f[1], camera_model.c[0], camera_model.c[1]]
-    # dims = [image_side, image_side]
-    # for view in views:
-    #     R = view['R']
-    #     t = view['t'][:, 0] / 1000
-
-    #     t += gauss_means
-
-    #     with torch.no_grad():
-    #         res_pkg = my_render(gaussians, pipeline, background,
-    #                             intrinsics, dims, R.T, t)
-        
-    #     image = (res_pkg['render'].clamp(0.0, 1.0).cpu().numpy().transpose(1, 2, 0)*255).round().astype(np.uint8)
-    
-    #     cv2.imshow('test', cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
-    #     cv2.waitKey(1)
-
     template_list = []
     template_counter = 0
     for view_id, view in enumerate(views):
@@ -304,14 +287,10 @@ def synthesize_templates(opts: GenTemplatesOpts) -> None:
 
         for _ in range(opts.images_per_view):
 
-            # if template_counter == 5:
-            #     break
-
             timer.start()
 
             R = view['R']
             t = view['t'][:, 0] / 1000
-            # t += gauss_means
 
             intrinsics = [render_camera_model.f[0], render_camera_model.f[1],
                           render_camera_model.c[0], render_camera_model.c[1]]

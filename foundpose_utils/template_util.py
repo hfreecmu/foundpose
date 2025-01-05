@@ -41,6 +41,7 @@ def calc_tfidf(
     # Calculate soft-assignment weights, as in:
     # "Lost in Quantization: Improving Particular Object Retrieval in Large Scale Image Databases"
     if soft_assignment:
+        raise RuntimeError('when template made no sqrt but infer sqrt')
         word_weights = torch.exp(
             -torch.square(feature_word_dists) / (2.0 * soft_sigma_squared)
         )
