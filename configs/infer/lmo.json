@@ -4,10 +4,6 @@
         "object_dataset": "lmo",
         "repre_version": "v1",
         "crop_rel_pad": 0.2,
-        "crop_size": [
-            420,
-            420
-        ],
         "use_detections": true,
         "extractor_name": "dinov2_version=vits14-reg_stride=14_facet=token_layer=9_logbin=0_norm=1",
         "match_template_type": "tfidf",
@@ -16,14 +12,22 @@
         "pnp_type": "opencv",
         "final_pose_type": "best_coarse",
         "num_preds_factor": 1,
-        "vis_results": true,
+        "vis_results": false,
         "splat_path": "/home/hfreeman/harry_ws/repos/feature-3dgs/output/pruners/mask.ply",
         "vis_for_paper": false,
 
         "pnp_ransac_iter": 1000,
-        "pnp_inlier_thresh": 8.0,
+        "pnp_inlier_thresh": 10.0,
 
         "match_top_n_templates": 5,
-        "grid_cell_size": 14.0
+        "grid_cell_size": 14.0,
+
+        "crop_size": [
+            840,
+            840
+        ],
+
+        "model_path": "/home/hfreeman/Downloads/mesh_test/textured_mesh_mm.obj",
+        "data_dir": "/home/hfreeman/harry_ws/gopro/datasets/simple_manip/0_pruner_rotate"
     }
 }

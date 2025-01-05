@@ -16,6 +16,7 @@
         "features_patch_size": 14,
         "crop": true,
         "crop_rel_pad": 0.2,
+        
         "crop_size": [420, 420],
         "splat_path": "/home/hfreeman/harry_ws/repos/feature-3dgs/output/pruners/mask.ply"
     }

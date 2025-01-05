@@ -62,8 +62,6 @@ from argparse import ArgumentParser
 from arguments import PipelineParams
 ###
 
-logger: logging.Logger = logging.get_logger()
-
 # TODO should probably switch all these to use camera used to train splat?
 
 def my_render(gaussians, pipeline, background, intrinsics, dims, R, T):
@@ -151,13 +149,14 @@ class InferOpts(NamedTuple):
     # hard coding for template render
     features_patch_size: int = 14
     ssaa_factor: float = 2.0
+    template_crop_size = (420, 420)
 
+    data_dir: str = None
     splat_path: str = None
+    model_path: str = None
 
     rot_thresh: float = 60.0
 
-# DATA_DIR = '/home/hfreeman/harry_ws/gopro/datasets/simple_manip/0_pruner_rotate'
-DATA_DIR = '/home/hfreeman/Downloads/feat_test/bundlesdf'
 def infer(opts: InferOpts) -> None:
 
     # Prepare a logger and a timer.
@@ -174,9 +173,8 @@ def infer(opts: InferOpts) -> None:
     timer.elapsed("Time for setting up the stage")
 
     # Create a renderer.
-    MODEL_PATH = '/home/hfreeman/Downloads/mesh_test/textured_mesh_mm.obj'
     renderer_type = renderer_builder.RendererType.PYRENDER_RASTERIZER
-    renderer = renderer_builder.build(renderer_type=renderer_type, model_path=MODEL_PATH)
+    renderer = renderer_builder.build(renderer_type=renderer_type, model_path=opts.model_path)
     gaussians = GaussianModel(3)
     gaussians.load_ply(opts.splat_path) 
 
@@ -267,17 +265,17 @@ def infer(opts: InferOpts) -> None:
 
     timer.elapsed("Time for preparing object data")
 
-    color_dir = os.path.join(DATA_DIR, 'color')
+    color_dir = os.path.join(opts.data_dir, 'color')
     if not os.path.exists(color_dir):
-        color_dir = os.path.join(DATA_DIR, 'rgb')
+        color_dir = os.path.join(opts.data_dir, 'rgb')
     if not os.path.exists(color_dir):
-        color_dir = os.path.join(DATA_DIR, 'undistorted')
-    mask_dir = os.path.join(DATA_DIR, 'mask')
+        color_dir = os.path.join(opts.data_dir, 'undistorted')
+    mask_dir = os.path.join(opts.data_dir, 'mask')
     if not os.path.exists(mask_dir):
-        mask_dir = os.path.join(DATA_DIR, 'masks')
+        mask_dir = os.path.join(opts.data_dir, 'masks')
     if not os.path.exists(mask_dir):
-        mask_dir = os.path.join(DATA_DIR, 'mask_obj')
-    K_path = os.path.join(DATA_DIR, 'cam_K.txt')
+        mask_dir = os.path.join(opts.data_dir, 'mask_obj')
+    K_path = os.path.join(opts.data_dir, 'cam_K.txt')
 
     K = np.loadtxt(K_path)
     orig_camera_c2w = None
@@ -286,7 +284,7 @@ def infer(opts: InferOpts) -> None:
     if opts.crop:
         grid_size = opts.crop_size
     else:
-        grid_size = orig_image_size
+        raise RuntimeError('only crop supported')
     grid_points = feature_util.generate_grid_points(
         grid_size=grid_size,
         cell_size=opts.grid_cell_size,
@@ -338,9 +336,10 @@ def infer(opts: InferOpts) -> None:
 
     prev_trans = None
     for filename in filenames:
-        
 
-        identifier = int(filename.split('.')[0])
+        # identifier = int(filename.split('.')[0])
+        # if identifier < 22 or identifier > 26:
+        #     continue
 
         repre_np = repre_util.convert_object_repre_to_numpy(repre)
 
@@ -445,7 +444,6 @@ def infer(opts: InferOpts) -> None:
         )
 
         # Subsample query points if we have too many.
-        orig_query_points = torch.clone(query_points).cpu().numpy()
         if query_points.shape[0] > opts.max_num_queries:
             perm = torch.randperm(query_points.shape[0])
             query_points = query_points[perm[: opts.max_num_queries]]
@@ -574,6 +572,7 @@ def infer(opts: InferOpts) -> None:
                 prev_rot = prev_trans[0:3, 0:3]
 
                 rot_dist = rotation_distance(curr_rot, prev_rot) * 180 / np.pi
+
                 debug_rot_dists.append(rot_dist)
 
                 if rot_dist < opts.rot_thresh:
@@ -710,6 +709,7 @@ def infer(opts: InferOpts) -> None:
             
             timer.elapsed("Time for visualization")
 
+        ext = ".png" if opts.vis_for_paper else ".jpg"
         # Assemble visualization tiles to a grid and save it.
         if len(vis_tiles):
             if repre.feat_vis_projectors[0].pca.n_components == 12:
@@ -718,13 +718,15 @@ def infer(opts: InferOpts) -> None:
                 vis_grid = np.hstack([vis_tiles, pca_tiles])
             else:
                 vis_grid = np.vstack(vis_tiles)
-            ext = ".png" if opts.vis_for_paper else ".jpg"
+        
             vis_path = os.path.join(
                 output_dir,
                 f"{basename}{ext}",
             )
             inout.save_im(vis_path, vis_grid)
             logger.info(f"Visualization saved to {vis_path}")
+
+        timer.start()
 
         R = trans_m2w[:3, :3]
         t = trans_m2w[:3, 3] / 1000
@@ -755,7 +757,7 @@ def infer(opts: InferOpts) -> None:
         
         pose_path = os.path.join(
                 output_dir,
-                f"{basename}.npy",
+                f"{basename}.txt",
             )
         
         M = np.eye(4)
@@ -818,8 +820,8 @@ def infer(opts: InferOpts) -> None:
                 box=crop_box,
                 camera_model_c2w=render_camera_model_c2w,
                 viewport_size=(
-                    int(opts.crop_size[0] * opts.ssaa_factor),
-                    int(opts.crop_size[1] * opts.ssaa_factor),
+                    int(opts.template_crop_size[0] * opts.ssaa_factor),
+                    int(opts.template_crop_size[1] * opts.ssaa_factor),
                 ),
                 viewport_rel_pad=opts.crop_rel_pad,
             )
@@ -848,11 +850,11 @@ def infer(opts: InferOpts) -> None:
             mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
 
             camera_model_c2w = crop_camera_model_c2w.copy()
-            scale_factor = opts.crop_size[0] / float(
+            scale_factor = opts.template_crop_size[0] / float(
                 crop_camera_model_c2w.width
             )
-            camera_model_c2w.width = opts.crop_size[0]
-            camera_model_c2w.height = opts.crop_size[1]
+            camera_model_c2w.width = opts.template_crop_size[0]
+            camera_model_c2w.height = opts.template_crop_size[1]
             camera_model_c2w.c = (
                 camera_model_c2w.c[0] * scale_factor,
                 camera_model_c2w.c[1] * scale_factor,
@@ -963,8 +965,9 @@ def infer(opts: InferOpts) -> None:
 
         # cv2.imshow('test', cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
         # cv2.waitKey(0)
-        #breakpoint()
         ###
+
+        timer.elapsed("Time for my logic")
 
         # Empty unused GPU cache variables.
         if device == "cuda":
@@ -983,5 +986,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    logger: logging.Logger = logging.get_logger()
     with torch.no_grad():
         main()
