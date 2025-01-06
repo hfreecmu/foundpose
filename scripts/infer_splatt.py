@@ -62,7 +62,8 @@ from argparse import ArgumentParser
 from arguments import PipelineParams
 ###
 
-# TODO should probably switch all these to use camera used to train splat?
+# TODO matching when patch less than 14
+# Pose graph opt?
 
 def my_render(gaussians, pipeline, background, intrinsics, dims, R, T):
     fx, fy, cx, cy = intrinsics
@@ -148,14 +149,16 @@ class InferOpts(NamedTuple):
 
     # hard coding for template render
     features_patch_size: int = 14
-    ssaa_factor: float = 2.0
+    ssaa_factor: float = 1.0
     template_crop_size = (420, 420)
 
+    depth_range: Tuple[int] = None
     data_dir: str = None
     splat_path: str = None
     model_path: str = None
 
-    rot_thresh: float = 60.0
+    # rot_thresh: float = 60.0
+    rot_thresh: float = -1.0
 
 def infer(opts: InferOpts) -> None:
 
@@ -575,7 +578,7 @@ def infer(opts: InferOpts) -> None:
 
                 debug_rot_dists.append(rot_dist)
 
-                if rot_dist < opts.rot_thresh:
+                if opts.rot_thresh <= 0 or rot_dist < opts.rot_thresh:
                     coarse_poses.append(cp)
 
         if len(coarse_poses) == 0:
@@ -767,205 +770,208 @@ def infer(opts: InferOpts) -> None:
 
         prev_trans = trans_m2w
 
-        ### we will try rendering a new template
-        template_intrinsics = [render_camera_model.f[0], render_camera_model.f[1],
-                              render_camera_model.c[0], render_camera_model.c[1]]
-        template_dims = [render_camera_model.height, render_camera_model.width]
-        del res_pkg
-        torch.cuda.empty_cache()
-        t[-1] = 0.6 # TODO param this
-        res_pkg = my_render(gaussians, pipeline, background,
-                            template_intrinsics, template_dims, R.T, t)
-        image = (res_pkg['render'].clamp(0.0, 1.0).cpu().numpy().transpose(1, 2, 0)*255).round().astype(np.uint8)
-        depth = res_pkg['depth'].cpu().numpy().squeeze(0) * 1000
-        mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
+        # ### we will try rendering a new template
+        # template_intrinsics = [render_camera_model.f[0], render_camera_model.f[1],
+        #                       render_camera_model.c[0], render_camera_model.c[1]]
+        # template_dims = [render_camera_model.height, render_camera_model.width]
+        # del res_pkg
+        # torch.cuda.empty_cache()
+        # t[-1] = np.mean(opts.depth_range) / 1000
+        # res_pkg = my_render(gaussians, pipeline, background,
+        #                     template_intrinsics, template_dims, R.T, t)
+        # image = (res_pkg['render'].clamp(0.0, 1.0).cpu().numpy().transpose(1, 2, 0)*255).round().astype(np.uint8)
+        # depth = res_pkg['depth'].cpu().numpy().squeeze(0) * 1000
+        # mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
 
-        ys, xs = mask.nonzero()
-        box = np.array(misc.calc_2d_box(xs, ys))
-        object_box = AlignedBox2f(
-            left=box[0],
-            top=box[1],
-            right=box[2],
-            bottom=box[3],
-        )
+        # ys, xs = mask.nonzero()
+        # box = np.array(misc.calc_2d_box(xs, ys))
+        # object_box = AlignedBox2f(
+        #     left=box[0],
+        #     top=box[1],
+        #     right=box[2],
+        #     bottom=box[3],
+        # )
 
-        if (
-            object_box.left == 0
-            or object_box.top == 0
-            or object_box.right == dims[1] - 1
-            or object_box.bottom == dims[0] - 1
-        ):
-            raise ValueError("The model does not fit the viewport.")
+        # if (
+        #     object_box.left == 0
+        #     or object_box.top == 0
+        #     or object_box.right == dims[1] - 1
+        #     or object_box.bottom == dims[0] - 1
+        # ):
+        #     raise ValueError("The model does not fit the viewport.")
         
 
-        trans_m2c = structs.RigidTransform(R=R, t=t[:, None]*1000)
-        R_c2m = trans_m2c.R.T
-        trans_c2m = structs.RigidTransform(R=R_c2m, t=-R_c2m.dot(trans_m2c.t))
-        trans_c2m_matrix = misc.get_rigid_matrix(trans_c2m)
-        render_camera_model_c2w = PinholePlaneCameraModel(
-                width=render_camera_model.width,
-                height=render_camera_model.height,
-                f=render_camera_model.f,
-                c=render_camera_model.c,
-                T_world_from_eye=trans_c2m_matrix,
-            )
+        # trans_m2c = structs.RigidTransform(R=R, t=t[:, None]*1000)
+        # R_c2m = trans_m2c.R.T
+        # trans_c2m = structs.RigidTransform(R=R_c2m, t=-R_c2m.dot(trans_m2c.t))
+        # trans_c2m_matrix = misc.get_rigid_matrix(trans_c2m)
+        # render_camera_model_c2w = PinholePlaneCameraModel(
+        #         width=render_camera_model.width,
+        #         height=render_camera_model.height,
+        #         f=render_camera_model.f,
+        #         c=render_camera_model.c,
+        #         T_world_from_eye=trans_c2m_matrix,
+        #     )
 
-        if opts.crop:
-            crop_box = misc.calc_crop_box(
-                box=object_box,
-                make_square=True,
-            )
+        # if opts.crop:
+        #     crop_box = misc.calc_crop_box(
+        #         box=object_box,
+        #         make_square=True,
+        #     )
 
-            crop_camera_model_c2w = misc.construct_crop_camera(
-                box=crop_box,
-                camera_model_c2w=render_camera_model_c2w,
-                viewport_size=(
-                    int(opts.template_crop_size[0] * opts.ssaa_factor),
-                    int(opts.template_crop_size[1] * opts.ssaa_factor),
-                ),
-                viewport_rel_pad=opts.crop_rel_pad,
-            )
+        #     crop_camera_model_c2w = misc.construct_crop_camera(
+        #         box=crop_box,
+        #         camera_model_c2w=render_camera_model_c2w,
+        #         viewport_size=(
+        #             int(opts.template_crop_size[0] * opts.ssaa_factor),
+        #             int(opts.template_crop_size[1] * opts.ssaa_factor),
+        #         ),
+        #         viewport_rel_pad=opts.crop_rel_pad,
+        #     )
 
-            new_trans_c2m_matrix = crop_camera_model_c2w.T_world_from_eye
-            new_R_c2m = new_trans_c2m_matrix[0:3, 0:3]
-            new_t_c2m = new_trans_c2m_matrix[0:3, 3]
-            new_R = new_R_c2m.T
-            new_t = -new_R @ new_t_c2m
+        #     new_trans_c2m_matrix = crop_camera_model_c2w.T_world_from_eye
+        #     new_R_c2m = new_trans_c2m_matrix[0:3, 0:3]
+        #     new_t_c2m = new_trans_c2m_matrix[0:3, 3]
+        #     new_R = new_R_c2m.T
+        #     new_t = -new_R @ new_t_c2m
 
-            R = new_R
-            t = new_t / 1000
+        #     R = new_R
+        #     t = new_t / 1000
 
-            crop_intrinsics = [crop_camera_model_c2w.f[0], crop_camera_model_c2w.f[1],
-                                crop_camera_model_c2w.c[0], crop_camera_model_c2w.c[1]]
-            crop_dims = [crop_camera_model_c2w.height, crop_camera_model_c2w.width]
+        #     crop_intrinsics = [crop_camera_model_c2w.f[0], crop_camera_model_c2w.f[1],
+        #                         crop_camera_model_c2w.c[0], crop_camera_model_c2w.c[1]]
+        #     crop_dims = [crop_camera_model_c2w.height, crop_camera_model_c2w.width]
             
-            del res_pkg
-            torch.cuda.empty_cache()
+        #     del res_pkg
+        #     torch.cuda.empty_cache()
 
-            res_pkg = my_render(gaussians, pipeline, background,
-                                crop_intrinsics, crop_dims, R.T, t)
+        #     res_pkg = my_render(gaussians, pipeline, background,
+        #                         crop_intrinsics, crop_dims, R.T, t)
         
-            image = (res_pkg['render'].clamp(0.0, 1.0).cpu().numpy().transpose(1, 2, 0)*255).round().astype(np.uint8)
-            depth = res_pkg['depth'].cpu().numpy().squeeze(0) * 1000
-            mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
+        #     image = (res_pkg['render'].clamp(0.0, 1.0).cpu().numpy().transpose(1, 2, 0)*255).round().astype(np.uint8)
+        #     depth = res_pkg['depth'].cpu().numpy().squeeze(0) * 1000
+        #     mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
 
-            camera_model_c2w = crop_camera_model_c2w.copy()
-            scale_factor = opts.template_crop_size[0] / float(
-                crop_camera_model_c2w.width
-            )
-            camera_model_c2w.width = opts.template_crop_size[0]
-            camera_model_c2w.height = opts.template_crop_size[1]
-            camera_model_c2w.c = (
-                camera_model_c2w.c[0] * scale_factor,
-                camera_model_c2w.c[1] * scale_factor,
-            )
-            camera_model_c2w.f = (
-                camera_model_c2w.f[0] * scale_factor,
-                camera_model_c2w.f[1] * scale_factor,
-            )
+        #     camera_model_c2w = crop_camera_model_c2w.copy()
+        #     scale_factor = opts.template_crop_size[0] / float(
+        #         crop_camera_model_c2w.width
+        #     )
+        #     camera_model_c2w.width = opts.template_crop_size[0]
+        #     camera_model_c2w.height = opts.template_crop_size[1]
+        #     camera_model_c2w.c = (
+        #         camera_model_c2w.c[0] * scale_factor,
+        #         camera_model_c2w.c[1] * scale_factor,
+        #     )
+        #     camera_model_c2w.f = (
+        #         camera_model_c2w.f[0] * scale_factor,
+        #         camera_model_c2w.f[1] * scale_factor,
+        #     )
 
-        # In case we are not cropping.
-        else:
-            raise RuntimeError('only crop supported')
+        # # In case we are not cropping.
+        # else:
+        #     raise RuntimeError('only crop supported')
         
-        if opts.ssaa_factor != 1.0:
-            ssaa_intrinsics = [camera_model_c2w.f[0], camera_model_c2w.f[1],
-                                camera_model_c2w.c[0], camera_model_c2w.c[1]]
-            ssaa_dims = [camera_model_c2w.height, camera_model_c2w.width]
-            
+        # if opts.ssaa_factor != 1.0:
+        #     target_size = (camera_model_c2w.width, camera_model_c2w.height)
 
-            del res_pkg
-            torch.cuda.empty_cache()
+        #     image = misc.resize_image(
+        #             image=image,
+        #             size=target_size,
+        #             interpolation=cv2.INTER_AREA,
+        #         )
+        #     depth = misc.resize_image(
+        #             image=depth,
+        #             size=target_size,
+        #             interpolation=cv2.INTER_NEAREST,
+        #         )
+        #     mask = misc.resize_image(
+        #             image=mask,
+        #             size=target_size,
+        #             interpolation=cv2.INTER_NEAREST,
+        #         )
+        # else:
+        #     pass
 
-            res_pkg = my_render(gaussians, pipeline, background,
-                                ssaa_intrinsics, ssaa_dims, R.T, t)
+        # ys, xs = mask.nonzero()
+        # box = np.array(misc.calc_2d_box(xs, ys))
+        # object_box = AlignedBox2f(
+        #     left=box[0],
+        #     top=box[1],
+        #     right=box[2],
+        #     bottom=box[3],
+        # )
+
+        # # just naming convention change
+        # camera_world_from_cam = camera_model_c2w
+        # image_chw = array_to_tensor(image).to(torch.float32).permute(2,0,1).to(device) / 255.0
+        # depth_image_hw = array_to_tensor(depth).to(torch.float32).to(device)
+        # object_mask_modal = array_to_tensor(mask).to(torch.float32).to(device)
+
+        # T_model_from_camera = (
+        #     array_to_tensor(camera_world_from_cam.T_world_from_eye)
+        #     .to(torch.float32)
+        #     .to(device)
+        # )
+
+        # (
+        #     feat_vectors,
+        #     feat_to_vertex_ids,
+        #     vertices_in_model,
+        # ) = feature_util.get_visual_features_registered_in_3d(
+        #     image_chw=image_chw,
+        #     depth_image_hw=depth_image_hw,
+        #     object_mask=object_mask_modal,
+        #     camera=camera_world_from_cam,
+        #     T_model_from_camera=T_model_from_camera,
+        #     extractor=extractor,
+        #     grid_cell_size=opts.grid_cell_size,
+        #     debug=False,
+        # )
+
+        # feat_vectors = projector_util.project_features(
+        #         feat_vectors=feat_vectors,
+        #         projectors=repre.feat_raw_projectors,
+        #     ).contiguous()
         
-            image = (res_pkg['render'].clamp(0.0, 1.0).cpu().numpy().transpose(1, 2, 0)*255).round().astype(np.uint8)
-            depth = res_pkg['depth'].cpu().numpy().squeeze(0) * 1000
-            mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
-        else:
-            pass
+        # word_dists, word_ids = visual_words_knn_index.search(feat_vectors)
 
-        ys, xs = mask.nonzero()
-        box = np.array(misc.calc_2d_box(xs, ys))
-        object_box = AlignedBox2f(
-            left=box[0],
-            top=box[1],
-            right=box[2],
-            bottom=box[3],
-        )
-
-        # just naming convention change
-        camera_world_from_cam = camera_model_c2w
-        image_chw = array_to_tensor(image).to(torch.float32).permute(2,0,1).to(device) / 255.0
-        depth_image_hw = array_to_tensor(depth).to(torch.float32).to(device)
-        object_mask_modal = array_to_tensor(mask).to(torch.float32).to(device)
-
-        T_model_from_camera = (
-            array_to_tensor(camera_world_from_cam.T_world_from_eye)
-            .to(torch.float32)
-            .to(device)
-        )
-
-        (
-            feat_vectors,
-            feat_to_vertex_ids,
-            vertices_in_model,
-        ) = feature_util.get_visual_features_registered_in_3d(
-            image_chw=image_chw,
-            depth_image_hw=depth_image_hw,
-            object_mask=object_mask_modal,
-            camera=camera_world_from_cam,
-            T_model_from_camera=T_model_from_camera,
-            extractor=extractor,
-            grid_cell_size=opts.grid_cell_size,
-            debug=False,
-        )
-
-        feat_vectors = projector_util.project_features(
-                feat_vectors=feat_vectors,
-                projectors=repre.feat_raw_projectors,
-            ).contiguous()
+        # tfidf = template_util.calc_tfidf(
+        #     feature_word_ids=word_ids,
+        #     feature_word_dists=word_dists,
+        #     word_idfs=repre.feat_cluster_idfs,
+        #     soft_assignment=repre.template_desc_opts.tfidf_soft_assign,
+        #     soft_sigma_squared=repre.template_desc_opts.tfidf_soft_sigma_squared,
+        # )
         
-        word_dists, word_ids = visual_words_knn_index.search(feat_vectors)
+        # prev_template_knn_index = knn_util.KNN(k=1, metric="l2")
+        # prev_template_knn_index.fit(feat_vectors.cpu())
 
-        tfidf = template_util.calc_tfidf(
-            feature_word_ids=word_ids,
-            feature_word_dists=word_dists,
-            word_idfs=repre.feat_cluster_idfs,
-            soft_assignment=repre.template_desc_opts.tfidf_soft_assign,
-            soft_sigma_squared=repre.template_desc_opts.tfidf_soft_sigma_squared,
-        )
-        
-        prev_template_knn_index = knn_util.KNN(k=1, metric="l2")
-        prev_template_knn_index.fit(feat_vectors.cpu())
+        # template_knn_indices = template_knn_indices_orig + [prev_template_knn_index]
+        # repre = copy.deepcopy(repre_orig)
 
-        template_knn_indices = template_knn_indices_orig + [prev_template_knn_index]
-        repre = copy.deepcopy(repre_orig)
+        # comb_vertices = torch.concat((repre.vertices, vertices_in_model))
+        # comb_feat_vectors = torch.concat((repre.feat_vectors, feat_vectors))
+        # comb_feat_to_vertex_ids = torch.concat((repre.feat_to_vertex_ids, feat_to_vertex_ids))
+        # comb_feat_to_template_ids = torch.concat((repre.feat_to_template_ids,
+        #                                           (repre.feat_to_template_ids.max().item() + 1) * \
+        #                                           torch.ones(feat_vectors.shape[0], dtype=torch.int32, device=device)))
+        # comb_feat_to_cluster_ids = None
+        # comb_templates = torch.concat((repre.templates, (image_chw * 255).to(torch.uint8).unsqueeze(0)))
+        # comb_template_cameras_from_model = repre.template_cameras_cam_from_model + [camera_world_from_cam.copy()]
+        # comb_template_descs = torch.concat((repre.template_descs, tfidf.unsqueeze(0)))
 
-        comb_vertices = torch.concat((repre.vertices, vertices_in_model))
-        comb_feat_vectors = torch.concat((repre.feat_vectors, feat_vectors))
-        comb_feat_to_vertex_ids = torch.concat((repre.feat_to_vertex_ids, feat_to_vertex_ids))
-        comb_feat_to_template_ids = torch.concat((repre.feat_to_template_ids,
-                                                  (repre.feat_to_template_ids.max().item() + 1) * \
-                                                  torch.ones(feat_vectors.shape[0], dtype=torch.int32, device=device)))
-        comb_feat_to_cluster_ids = None
-        comb_templates = torch.concat((repre.templates, (image_chw * 255).to(torch.uint8).unsqueeze(0)))
-        comb_template_cameras_from_model = repre.template_cameras_cam_from_model + [camera_world_from_cam.copy()]
-        comb_template_descs = torch.concat((repre.template_descs, tfidf.unsqueeze(0)))
+        # repre.vertices = comb_vertices
+        # repre.feat_vectors = comb_feat_vectors
+        # repre.feat_to_vertex_ids = comb_feat_to_vertex_ids
+        # repre.feat_to_template_ids = comb_feat_to_template_ids
+        # repre.feat_to_cluster_ids = comb_feat_to_cluster_ids
+        # repre.templates = comb_templates
+        # repre.template_cameras_cam_from_model = comb_template_cameras_from_model
+        # repre.template_descs = comb_template_descs
 
-        repre.vertices = comb_vertices
-        repre.feat_vectors = comb_feat_vectors
-        repre.feat_to_vertex_ids = comb_feat_to_vertex_ids
-        repre.feat_to_template_ids = comb_feat_to_template_ids
-        repre.feat_to_cluster_ids = comb_feat_to_cluster_ids
-        repre.templates = comb_templates
-        repre.template_cameras_cam_from_model = comb_template_cameras_from_model
-        repre.template_descs = comb_template_descs
-
-        # cv2.imshow('test', cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
-        # cv2.waitKey(0)
-        ###
+        # # cv2.imshow('test', cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+        # # cv2.waitKey(0)
+        # ###
 
         timer.elapsed("Time for my logic")
 

@@ -13,6 +13,6 @@
 
         "pca_components": 64,
         "cluster_num": 512,
-        "grid_cell_size": 14.0
+        "grid_cell_size": 7.0
     }
 }

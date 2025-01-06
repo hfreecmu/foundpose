@@ -98,12 +98,12 @@ class GenTemplatesOpts(NamedTuple):
     overwrite: bool = True
     debug: bool = True
 
+    depth_range: Tuple[int] = None
+    data_dir: str = None
     splat_path: str = None
 
 
 def synthesize_templates(opts: GenTemplatesOpts) -> None: 
-
-    datasets_path = bop_config.datasets_path
 
     # Fix the random seed for reproducibility.
     np.random.seed(0)
@@ -113,47 +113,29 @@ def synthesize_templates(opts: GenTemplatesOpts) -> None:
     timer = misc.Timer(enabled=opts.debug)
     timer.start()
 
-    # Get IDs of objects to process.
-    object_lids = opts.object_lids
+    K_path = os.path.join(opts.data_dir, 'cam_K.txt')
+    K = np.loadtxt(K_path)
+    intrinsics = [K[0, 0], K[1, 1], K[0, 2], K[1, 2]]
 
-    bop_model_props = dataset_params.get_model_params(datasets_path=datasets_path, dataset_name=opts.object_dataset)
-    if object_lids is None:
-        # If local (object) IDs are not specified, synthesize templates for all objects
-        # in the specified dataset.
-        object_lids = bop_model_props["obj_ids"]
-
-    # Get properties of the test split of the specified dataset.
-    bop_test_split_props = dataset_params.get_split_params(
-        datasets_path=datasets_path,
-        dataset_name=opts.object_dataset,
-        split="test"
-    )
-
-    # Get properties of the default camera for the specified dataset.
-    bop_camera = dataset_params.get_camera_params(datasets_path=datasets_path, dataset_name=opts.object_dataset)
-
-    logger.info(f"Bop camera details are read ")
-
-    print("Object lids: ", object_lids)
-
-    # print("Bop camera params: \n", bop_camera)
-
-    # print("Bop test split props: \n", bop_test_split_props)
+    dims_path = os.path.join(opts.data_dir, 'cam_dims.txt')
+    dims = np.loadtxt(dims_path).astype(int).tolist()
+    logger.info(f"Camera details are read ")
 
     # Prepare a camera for the template (square viewport of a size divisible by the patch size).
-    bop_camera_width = bop_camera['im_size'][0]
-    bop_camera_height = bop_camera['im_size'][1]
-    max_image_side = max(bop_camera_width, bop_camera_height)
-    image_side = opts.features_patch_size * int(
-        max_image_side / opts.features_patch_size
-    )
+    # bop_camera_width = dims[0]
+    # bop_camera_height = dims[1]
+    # max_image_side = max(bop_camera_width, bop_camera_height)
+    # image_side = opts.features_patch_size * int(
+    #     max_image_side / opts.features_patch_size
+    # )
+
     camera_model = PinholePlaneCameraModel(
-        width=image_side,
-        height=image_side,
-        f=(bop_camera['K'][0,0], bop_camera['K'][1,1]),
+        width=dims[1],
+        height=dims[0],
+        f=(intrinsics[0], intrinsics[1]),
         c=(
-            bop_camera['K'][0,2] - 0.5 * (bop_camera_width - image_side),
-            bop_camera['K'][1,2] - 0.5 * (bop_camera_height - image_side),
+            intrinsics[2],
+            intrinsics[3],
         )
     )
     # Prepare a camera for rendering, upsampled for SSAA (supersampling anti-aliasing).
@@ -171,16 +153,11 @@ def synthesize_templates(opts: GenTemplatesOpts) -> None:
     )
     print("camera model created")
 
-    # Build a renderer.
-    render_types = [RenderType.COLOR, RenderType.DEPTH, RenderType.MASK]
-    renderer_type = renderer_builder.RendererType.PYRENDER_RASTERIZER
-    renderer = renderer_builder.build(renderer_type=renderer_type)
 
     # Define radii of the view spheres on which we will sample viewpoints.
     # The specified number of radii is sampled uniformly in the range of
     # camera-object distances from the test split of the specified dataset.
-    depth_range = bop_test_split_props["depth_range"]
-    depth_range = (300.0, 900.0)
+    depth_range = opts.depth_range
 
     min_depth = np.min(depth_range)
     max_depth = np.max(depth_range)
@@ -309,8 +286,8 @@ def synthesize_templates(opts: GenTemplatesOpts) -> None:
             output[RenderType.MASK] = mask
 
             # cv2.imshow('test', cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
-            # cv2.imshow('test', mask)
-            # cv2.waitKey(1)
+            # #cv2.imshow('test', mask)
+            # cv2.waitKey(0)
             
             # Calculate 2D bounding box of the object and make sure
             # it is within the image.
@@ -362,6 +339,9 @@ def synthesize_templates(opts: GenTemplatesOpts) -> None:
                     ),
                     viewport_rel_pad=opts.crop_rel_pad,
                 )
+                
+                # assert opts.ssaa_factor == 1.0
+                # size_diff = opts.crop_size
 
                 new_trans_c2m_matrix = crop_camera_model_c2w.T_world_from_eye
                 new_R_c2m = new_trans_c2m_matrix[0:3, 0:3]
@@ -416,27 +396,20 @@ def synthesize_templates(opts: GenTemplatesOpts) -> None:
 
             # Downsample the renderings to the target size in case of SSAA.
             if opts.ssaa_factor != 1.0:
-                ssaa_intrinsics = [camera_model_c2w.f[0], camera_model_c2w.f[1],
-                                   camera_model_c2w.c[0], camera_model_c2w.c[1]]
-                ssaa_dims = [camera_model_c2w.height, camera_model_c2w.width]
-                
+                target_size = (camera_model_c2w.width, camera_model_c2w.height)
+                for output_key in output.keys():
+                    if output_key in [RenderType.COLOR]:
+                        interpolation = cv2.INTER_AREA
+                    else:
+                        interpolation = cv2.INTER_NEAREST
 
-                del res_pkg
-                torch.cuda.empty_cache()
+                    output[output_key] = misc.resize_image(
+                        image=output[output_key],
+                        size=target_size,
+                        interpolation=interpolation,
+                    )
 
-                res_pkg = my_render(gaussians, pipeline, background,
-                                    ssaa_intrinsics, ssaa_dims, R.T, t)
-            
-                image = (res_pkg['render'].clamp(0.0, 1.0).cpu().numpy().transpose(1, 2, 0)*255).round().astype(np.uint8)
-                depth = res_pkg['depth'].cpu().numpy().squeeze(0) * 1000
-                mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
-
-                output = {}
-                output[RenderType.COLOR] = image
-                output[RenderType.DEPTH] = depth
-                output[RenderType.MASK] = mask
-
-                # cv2.imshow('test', cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+                # cv2.imshow('test', cv2.cvtColor(output[RenderType.COLOR], cv2.COLOR_RGB2BGR))
                 # cv2.waitKey(0)
             else:
                 pass
