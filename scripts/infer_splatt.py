@@ -607,7 +607,7 @@ def infer(opts: InferOpts) -> None:
             else:
                 best_coarse_pose_id = top_ts_ind
 
-        best_coarse_quality = coarse_poses[best_coarse_pose_id]['quality']
+        # best_coarse_quality = coarse_poses[best_coarse_pose_id]['quality']
 
         # for coarse_pose_id, pose in enumerate(coarse_poses):
         #     if (
