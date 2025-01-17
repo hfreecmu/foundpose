@@ -58,7 +58,7 @@ def my_render(gaussians, pipeline, background, intrinsics, dims, R, T):
                   image=dummy_image, 
                   gt_alpha_mask=None,
                   image_name=None, uid=None,
-                  semantic_feature=None,
+                  #semantic_feature=None,
                   )
     
     res_pkg = render(cam, gaussians, pipeline, background)
@@ -479,6 +479,11 @@ def synthesize_templates(opts: GenTemplatesOpts) -> None:
             )
             logger.info(f"Saving template depth map {template_counter} to: {depth_path}")
             inout.save_depth(depth_path, depth_image)
+            # depth_path = os.path.join(
+            #     templates_depth_dir, f"template_{template_counter:04d}.npy"
+            # )
+            # logger.info(f"Saving template depth map {template_counter} to: {depth_path}")
+            # np.save(depth_path, depth_image)
 
             # Save template mask.
             mask_path = os.path.join(

@@ -64,15 +64,15 @@ def extract_poses(opts: InferOpts) -> None:
         raise RuntimeError('opts needs version')
     signature = misc.slugify(opts.object_dataset) + "_{}".format(version)
     pose_dir = os.path.join(
-        bop_config.output_path, "pose_candidates", signature, str(object_lid)
+        bop_config.output_path, "inference", signature, str(object_lid)
     )
 
     output_dir = os.path.join(
-        bop_config.output_path, "inference", signature, str(object_lid)
+        bop_config.output_path, "graph_search", signature, str(object_lid)
     )
     os.makedirs(output_dir, exist_ok=True)
     vis_dir = os.path.join(
-        bop_config.output_path, "inference", signature, str(object_lid) + '_vis'
+        bop_config.output_path, "graph_search", signature, str(object_lid) + '_vis'
     )
     os.makedirs(vis_dir, exist_ok=True)
 
@@ -84,7 +84,7 @@ def extract_poses(opts: InferOpts) -> None:
     
     filenames = []
     for filename in os.listdir(pose_dir):
-        if not filename.endswith('.npy'):
+        if not filename.endswith('pc.npy'):
             continue
 
         filenames.append(filename)
@@ -154,9 +154,6 @@ def extract_poses(opts: InferOpts) -> None:
         R = M[0:3, 0:3]
         t = M[0:3, 3]
 
-        output_path = os.path.join(output_dir, filename)
-        np.savetxt(output_path, M)
-
         res_pkg = my_render(gaussians, pipeline, background,
                             intrinsics, dims, R.T, t)
         
@@ -164,6 +161,11 @@ def extract_poses(opts: InferOpts) -> None:
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
         filename = filenames[f_idx]
+        filename = filename.replace('_pc.npy', '.npy')
+
+        output_path = os.path.join(output_dir, filename)
+        np.savetxt(output_path, M)
+
         orig_image_name = filename.replace('.npy', '.png')
         orig_image_path = os.path.join(color_dir, orig_image_name)
         if not os.path.exists(orig_image_path):

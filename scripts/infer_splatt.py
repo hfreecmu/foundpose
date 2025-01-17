@@ -83,7 +83,7 @@ def my_render(gaussians, pipeline, background, intrinsics, dims, R, T):
                   image=dummy_image, 
                   gt_alpha_mask=None,
                   image_name=None, uid=None,
-                  semantic_feature=None,
+                  #semantic_feature=None,
                   )
     
     res_pkg = render(cam, gaussians, pipeline, background)
@@ -159,6 +159,10 @@ class InferOpts(NamedTuple):
 
     # rot_thresh: float = 60.0
     rot_thresh: float = -1.0
+
+    # gauss opt
+    num_opt_iters: int = 200
+    opt_lr: float = 1e-3
 
 def infer(opts: InferOpts) -> None:
 
@@ -558,6 +562,22 @@ def infer(opts: InferOpts) -> None:
                         "template_score": corresp_curr['template_score'].item()
                     }
                 )
+
+        # pose_candidates = []
+        # pose_qualities = []
+        # for cp in coarse_poses:
+        #     pose_est_m2c = structs.ObjectPose(
+        #         R=cp["R_m2c"], t=cp["t_m2c"]
+        #     )
+        #     pc_trans_c2w = camera_c2w.T_world_from_eye
+        #     pc_trans_m2w = pc_trans_c2w.dot(misc.get_rigid_matrix(pose_est_m2c))
+
+        #     pose_candidates.append(pc_trans_m2w)
+        #     pose_qualities.append(cp['quality'])
+
+        # pose_candidates = np.array(pose_candidates)
+        # output_path = os.path.join(output_dir, f"{basename}_pc.npy")
+        # np.save(output_path, pose_candidates)
 
         if prev_trans is not None:
             unfilt_coarse_poses = coarse_poses

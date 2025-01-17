@@ -11,8 +11,8 @@
             "desc_type": "tfidf"
         },
 
-        "pca_components": 64,
-        "cluster_num": 512,
-        "grid_cell_size": 7.0
+        "pca_components": 32,
+        "cluster_num": 256,
+        "grid_cell_size": 3.5
     }
 }

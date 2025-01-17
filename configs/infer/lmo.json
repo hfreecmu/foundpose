@@ -13,14 +13,14 @@
         "final_pose_type": "best_coarse",
         "num_preds_factor": 1,
         "vis_results": false,
-        "splat_path": "/home/hfreeman/harry_ws/repos/feature-3dgs/output/pruners/mask.ply",
+        "splat_path": "/home/hfreeman/harry_ws/repos/SuGaR/output/from_scratch/vanilla_gs/pruners_colmap/mask.ply",
         "vis_for_paper": false,
 
         "pnp_ransac_iter": 1000,
         "pnp_inlier_thresh": 10.0,
 
         "match_top_n_templates": 5,
-        "grid_cell_size": 7.0,
+        "grid_cell_size": 3.5,
 
         "crop_size": [
             840,
@@ -28,7 +28,7 @@
         ],
 
         "depth_range": [470],
-        "model_path": "/home/hfreeman/Downloads/mesh_test/textured_mesh_mm.obj",
+        "model_path": "/home/hfreeman/harry_ws/repos/gs2mesh/output/sugar/custom_nw_iterations30000_DLNR_Middlebury_baseline7_0p/pruners_colmap/meshes_renamed/pruners_mm.ply",
         "data_dir": "/home/hfreeman/harry_ws/gopro/datasets/simple_manip/0_pruner_rotate"
     }
 }

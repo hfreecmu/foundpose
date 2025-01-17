@@ -125,6 +125,7 @@ def generate_raw_repre(
 
         image_arr = inout.load_im(image_path) # H,W,C
         depth_image_arr = inout.load_depth(depth_path)
+        # depth_image_arr = np.load(depth_path)
         mask_image_arr = inout.load_im(mask_path)
 
         image_chw = array_to_tensor(image_arr).to(torch.float32).permute(2,0,1).to(device) / 255.0

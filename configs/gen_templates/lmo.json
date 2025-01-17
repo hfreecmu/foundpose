@@ -19,7 +19,7 @@
         "depth_range": [470],
         "ssaa_factor": 1.0,
         "crop_size": [420, 420],
-        "splat_path": "/home/hfreeman/harry_ws/repos/feature-3dgs/output/pruners/mask.ply",
+        "splat_path": "/home/hfreeman/harry_ws/repos/SuGaR/output/from_scratch/vanilla_gs/pruners_colmap/mask.ply",
         "data_dir": "/home/hfreeman/harry_ws/repos/feature-3dgs/data/pruners"
     }
 }

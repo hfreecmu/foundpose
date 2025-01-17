@@ -40,7 +40,7 @@ def ensure_quaternion_continuity(quaternions):
 #         breakpoint()
 
 
-DATA_DIR = 'output/gopro/inference/lmo_v1/pruners'
+DATA_DIR = 'output/inference/lmo_v1/pruners'
 
 filenames = []
 for filename in os.listdir(DATA_DIR):
@@ -63,8 +63,12 @@ for filename in filenames:
 
 quats = ensure_quaternion_continuity(quats)
 
-smoothed_translations = savgol_filter(ts, 13, 2, axis=0)
-smoothed_quaternions = savgol_filter(quats, 13, 2, axis=0)
+# smoothed_translations = savgol_filter(ts, 13, 2, axis=0)
+# smoothed_quaternions = savgol_filter(quats, 13, 2, axis=0)
+smoothed_translations = np.copy(ts)
+smoothed_quaternions = np.copy(quats)
+
+smoothed_quaternions = smoothed_quaternions / np.linalg.norm(smoothed_quaternions, axis=1)[:, None]
 
 smoothed_poses = []
 for st, sq in zip(smoothed_translations, smoothed_quaternions):
