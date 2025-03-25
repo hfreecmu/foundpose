@@ -4,15 +4,16 @@
         "templates_version": "v1",
         "object_dataset": "lmo",
         "object_lids": [1,5,6,8,9,10,11,12],
-        "extractor_name": "dinov2_version=vits14-reg_stride=14_facet=token_layer=9_logbin=0_norm=1",
         "apply_pca": true,
         "cluster_features": true,
         "template_desc_opts": {
             "desc_type": "tfidf"
         },
 
-        "pca_components": 32,
-        "cluster_num": 256,
-        "grid_cell_size": 3.5
+        "pca_components": 64,
+        "cluster_num": 512,
+        "grid_cell_size": 3.5,
+
+        "extractor_name": "dinov2_version=vits14-reg_stride=14_facet=token_layer=9_logbin=0_norm=1"
     }
 }

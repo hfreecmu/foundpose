@@ -40,7 +40,7 @@ def ensure_quaternion_continuity(quaternions):
 #         breakpoint()
 
 
-DATA_DIR = 'output/inference/lmo_v1/pruners'
+DATA_DIR = 'output/sugar/inference/lmo_v1/pruners'
 
 filenames = []
 for filename in os.listdir(DATA_DIR):

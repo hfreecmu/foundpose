@@ -259,6 +259,9 @@ def generate_repre(
         device=device,
     )
 
+    del extractor
+    torch.cuda.empty_cache()
+
     feat_vectors = repre.feat_vectors
     assert feat_vectors is not None
 
@@ -280,6 +283,8 @@ def generate_repre(
         feat_vectors = pca_projector.transform(feat_vectors)
 
         timer.elapsed("Time for PCA")
+
+    torch.cuda.empty_cache()
 
     # Cluster features into visual words.
     if opts.cluster_features:
@@ -401,4 +406,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    with torch.no_grad():
+        main()

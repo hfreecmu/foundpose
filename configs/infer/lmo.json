@@ -5,7 +5,6 @@
         "repre_version": "v1",
         "crop_rel_pad": 0.2,
         "use_detections": true,
-        "extractor_name": "dinov2_version=vits14-reg_stride=14_facet=token_layer=9_logbin=0_norm=1",
         "match_template_type": "tfidf",
         "match_feat_matching_type": "cyclic_buddies",
         "match_top_k_buddies": 300,
@@ -13,7 +12,6 @@
         "final_pose_type": "best_coarse",
         "num_preds_factor": 1,
         "vis_results": false,
-        "splat_path": "/home/hfreeman/harry_ws/repos/SuGaR/output/from_scratch/vanilla_gs/pruners_colmap/mask.ply",
         "vis_for_paper": false,
 
         "pnp_ransac_iter": 1000,
@@ -27,8 +25,11 @@
             840
         ],
 
-        "depth_range": [470],
-        "model_path": "/home/hfreeman/harry_ws/repos/gs2mesh/output/sugar/custom_nw_iterations30000_DLNR_Middlebury_baseline7_0p/pruners_colmap/meshes_renamed/pruners_mm.ply",
-        "data_dir": "/home/hfreeman/harry_ws/gopro/datasets/simple_manip/0_pruner_rotate"
+        "depth_range": [1200],
+        "model_path": "/home/hfreeman/harry_ws/gopro/datasets/simple_manip/3_cracker_box/meshes/obj_mesh.ply",
+        "splat_path": "/home/hfreeman/harry_ws/gopro/datasets/simple_manip/3_cracker_box/meshes/obj_splat.ply",
+        "data_dir": "/home/hfreeman/harry_ws/gopro/datasets/simple_manip/3_cracker_box",
+
+        "extractor_name": "dinov2_version=vits14-reg_stride=14_facet=token_layer=9_logbin=0_norm=1"
     }
 }

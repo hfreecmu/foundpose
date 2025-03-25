@@ -16,10 +16,10 @@
         "crop": true,
         "crop_rel_pad": 0.2,
         
-        "depth_range": [470],
+        "depth_range": [1200],
         "ssaa_factor": 1.0,
         "crop_size": [420, 420],
-        "splat_path": "/home/hfreeman/harry_ws/repos/SuGaR/output/from_scratch/vanilla_gs/pruners_colmap/mask.ply",
-        "data_dir": "/home/hfreeman/harry_ws/repos/feature-3dgs/data/pruners"
+        "splat_path": "/home/hfreeman/harry_ws/gopro/datasets/simple_manip/3_cracker_box/meshes/obj_splat.ply",
+        "data_dir": "/home/hfreeman/harry_ws/gopro/datasets/simple_manip/3_cracker_box"
     }
 }
