@@ -39,7 +39,6 @@ class GenRepreOpts(NamedTuple):
     version: str
     templates_version: str
     object_dataset: str
-    object_lids: Optional[List[int]] = None
 
     # Feature extraction options.
     extractor_name: str = "dinov2_vits14_reg"
@@ -61,12 +60,12 @@ class GenRepreOpts(NamedTuple):
     # Other options.
     overwrite: bool = True
     debug: bool = True
+    data_dir: str = None
 
 
 def generate_raw_repre(
     opts: GenRepreOpts,
     object_dataset: str,
-    object_lid: int,
     extractor: torch.nn.Module,
     output_dir: str,
     device: str = "cuda",
@@ -79,15 +78,7 @@ def generate_raw_repre(
     timer = misc.Timer(enabled=debug)
 
     # Load the template metadata.
-    # metadata_path = "/Users/evinpinar/Documents/opensource_foundpose/output/templates/v1/lmo/1/metadata.json"
-    metadata_path = os.path.join(
-        bop_config.output_path,
-        "templates",
-        opts.templates_version,
-        opts.object_dataset,
-        str(object_lid),
-        "metadata.json"
-    )
+    metadata_path = os.path.join(opts.data_dir, 'obj_pose_init', 'metadata.json')
     metadata = json_util.load_json(metadata_path)
 
     # Prepare structures for storing data.
@@ -134,7 +125,6 @@ def generate_raw_repre(
 
         # Get the object annotation.
         assert data_sample["dataset"] == object_dataset
-        assert data_sample["lid"] == object_lid
         assert data_sample["template_id"] == data_id
 
         object_pose = data_sample["pose"]
@@ -218,7 +208,6 @@ def generate_raw_repre(
 def generate_repre(
     opts: GenRepreOpts,
     dataset: str,
-    lid: int,
     device: str = "cuda",
     extractor: Optional[torch.nn.Module] = None,
 ) -> None:
@@ -230,10 +219,7 @@ def generate_repre(
     timer.start()
 
     # Prepare the output folder.
-    base_repre_dir = os.path.join(bop_config.output_path, "object_repre")
-    output_dir = repre_util.get_object_repre_dir_path(
-        base_repre_dir, opts.version, dataset, lid
-    )
+    output_dir = os.path.join(opts.data_dir, 'obj_pose_init', 'object_repre')
     if os.path.exists(output_dir) and not opts.overwrite:
         raise ValueError(f"Output directory already exists: {output_dir}")
     os.makedirs(output_dir, exist_ok=True)
@@ -253,9 +239,8 @@ def generate_repre(
     repre = generate_raw_repre(
         opts=opts,
         object_dataset=dataset,
-        object_lid=lid,
-        extractor=extractor,
         output_dir=output_dir,
+        extractor=extractor,
         device=device,
     )
 
@@ -369,23 +354,12 @@ def generate_repre(
     timer.elapsed("Time for finding PCA for visualizations")
     timer.start()
 
-    # Save the generated object representation.
-    repre_dir = repre_util.get_object_repre_dir_path(
-        base_repre_dir, opts.version, dataset, lid
-    )
-    repre_util.save_object_repre(repre, repre_dir)
+    repre_util.save_object_repre(repre, output_dir)
 
     timer.elapsed("Time for saving the object representation")
 
 
 def generate_repre_from_list(opts: GenRepreOpts) -> None:
-
-    # Get IDs of objects to process.
-    object_lids = opts.object_lids
-    if object_lids is None:
-        datasets_path = bop_config.datasets_path
-        bop_model_props = dataset_params.get_model_params(datasets_path=datasets_path, dataset_name=opts.object_dataset)
-        object_lids = bop_model_props["obj_ids"]
 
     # Prepare a feature extractor.
     extractor = feature_util.make_feature_extractor(opts.extractor_name)
@@ -395,8 +369,7 @@ def generate_repre_from_list(opts: GenRepreOpts) -> None:
     print("Device: ", device)
 
     # Process each image separately.
-    object_lid = 'pruners'
-    generate_repre(opts, opts.object_dataset, object_lid, device, extractor)
+    generate_repre(opts, opts.object_dataset, device, extractor)
 
 
 def main() -> None:

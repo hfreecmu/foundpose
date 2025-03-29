@@ -2,7 +2,6 @@
     "gen_templates_opts": {
         "version": "v1",
         "object_dataset": "lmo",
-        "object_lids": [1,5,6,8,9,10,11,12],
         "num_viewspheres": 1,
         "min_num_viewpoints": 57,
         "num_inplane_rotations": 14,
@@ -19,7 +18,6 @@
         "depth_range": [1200],
         "ssaa_factor": 1.0,
         "crop_size": [420, 420],
-        "splat_path": "/home/hfreeman/harry_ws/gopro/datasets/simple_manip/3_cracker_box/meshes/obj_splat.ply",
-        "data_dir": "/home/hfreeman/harry_ws/gopro/datasets/simple_manip/3_cracker_box"
+        "data_dir": "/home/hfreeman/harry_ws/repos/pruner_track/datasets/ABF12"
     }
 }

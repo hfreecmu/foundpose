@@ -10,6 +10,8 @@ import time
 
 from typing import List, NamedTuple, Optional, Tuple
 
+from bop_toolkit_lib import inout
+
 import cv2
 
 import numpy as np
@@ -17,11 +19,6 @@ import numpy as np
 import torch
 
 from foundpose_utils.misc import array_to_tensor, tensor_to_array, tensors_to_arrays
-
-from bop_toolkit_lib import inout, dataset_params
-import bop_toolkit_lib.config as bop_config
-import bop_toolkit_lib.misc as bop_misc
-
 
 from foundpose_utils import (
     corresp_util,
@@ -154,8 +151,6 @@ class InferOpts(NamedTuple):
 
     depth_range: Tuple[int] = None
     data_dir: str = None
-    splat_path: str = None
-    model_path: str = None
 
     # rot_thresh: float = 60.0
     rot_thresh: float = -1.0
@@ -179,11 +174,14 @@ def infer(opts: InferOpts) -> None:
 
     timer.elapsed("Time for setting up the stage")
 
+    splat_path = os.path.join(opts.data_dir, 'meshes', 'obj_splat.ply')
+    model_path = os.path.join(opts.data_dir, 'meshes', 'obj_mesh.ply')
+
     # Create a renderer.
     renderer_type = renderer_builder.RendererType.PYRENDER_RASTERIZER
-    renderer = renderer_builder.build(renderer_type=renderer_type, model_path=opts.model_path)
+    renderer = renderer_builder.build(renderer_type=renderer_type, model_path=model_path)
     gaussians = GaussianModel(3)
-    gaussians.load_ply(opts.splat_path) 
+    gaussians.load_ply(splat_path) 
 
     parser = ArgumentParser()
     pipeline_par = PipelineParams(parser)
@@ -204,13 +202,11 @@ def infer(opts: InferOpts) -> None:
     if version == "":
         version = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     signature = misc.slugify(opts.object_dataset) + "_{}".format(version)
-    output_dir = os.path.join(
-        bop_config.output_path, "inference", signature, str(object_lid)
-    )
+
+    output_dir = os.path.join(opts.data_dir, 'obj_pose_init', 'inference')
+    vis_dir = os.path.join(opts.data_dir, 'obj_pose_init', 'vis')
+
     os.makedirs(output_dir, exist_ok=True)
-    vis_dir = os.path.join(
-        bop_config.output_path, "inference", signature, str(object_lid) + '_vis'
-    )
     os.makedirs(vis_dir, exist_ok=True)
 
     # Save parameters to a file.
@@ -223,10 +219,8 @@ def infer(opts: InferOpts) -> None:
     logger.info(
         f"Loading representation for object {object_lid} from dataset {opts.object_dataset}..."
     )
-    base_repre_dir = os.path.join(bop_config.output_path, "object_repre")
-    repre_dir = repre_util.get_object_repre_dir_path(
-        base_repre_dir, opts.version, opts.object_dataset, object_lid
-    )
+
+    repre_dir = os.path.join(opts.data_dir, 'obj_pose_init', 'object_repre')
     repre = repre_util.load_object_repre(
         repre_dir=repre_dir,
         tensor_device=device,
@@ -297,38 +291,6 @@ def infer(opts: InferOpts) -> None:
         cell_size=opts.grid_cell_size,
     )
     grid_points = grid_points.to(device)
-
-    ### for render template
-    bop_camera = dataset_params.get_camera_params(datasets_path=bop_config.datasets_path, dataset_name=opts.object_dataset)
-    bop_camera_width = bop_camera['im_size'][0]
-    bop_camera_height = bop_camera['im_size'][1]
-    max_image_side = max(bop_camera_width, bop_camera_height)
-    image_side = opts.features_patch_size * int(
-        max_image_side / opts.features_patch_size
-    )
-
-    camera_model = PinholePlaneCameraModel(
-        width=image_side,
-        height=image_side,
-        f=(bop_camera['K'][0,0], bop_camera['K'][1,1]),
-        c=(
-            bop_camera['K'][0,2] - 0.5 * (bop_camera_width - image_side),
-            bop_camera['K'][1,2] - 0.5 * (bop_camera_height - image_side),
-        )
-    )
-
-    render_camera_model = PinholePlaneCameraModel(
-        width=int(camera_model.width * opts.ssaa_factor),
-        height=int(camera_model.height * opts.ssaa_factor),
-        f=(
-            camera_model.f[0] * opts.ssaa_factor,
-            camera_model.f[1] * opts.ssaa_factor,
-        ),
-        c=(
-            camera_model.c[0] * opts.ssaa_factor,
-            camera_model.c[1] * opts.ssaa_factor,
-        )
-    )
 
     ###
 

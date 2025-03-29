@@ -11,7 +11,7 @@
         "pnp_type": "opencv",
         "final_pose_type": "best_coarse",
         "num_preds_factor": 1,
-        "vis_results": false,
+        "vis_results": true,
         "vis_for_paper": false,
 
         "pnp_ransac_iter": 1000,
@@ -21,15 +21,12 @@
         "grid_cell_size": 3.5,
 
         "crop_size": [
-            840,
-            840
+            420,
+            420
         ],
 
         "depth_range": [1200],
-        "model_path": "/home/hfreeman/harry_ws/gopro/datasets/simple_manip/3_cracker_box/meshes/obj_mesh.ply",
-        "splat_path": "/home/hfreeman/harry_ws/gopro/datasets/simple_manip/3_cracker_box/meshes/obj_splat.ply",
-        "data_dir": "/home/hfreeman/harry_ws/gopro/datasets/simple_manip/3_cracker_box",
-
-        "extractor_name": "dinov2_version=vits14-reg_stride=14_facet=token_layer=9_logbin=0_norm=1"
+        "extractor_name": "dinov2_version=vits14-reg_stride=14_facet=token_layer=9_logbin=0_norm=1",
+        "data_dir": "/home/hfreeman/harry_ws/repos/pruner_track/datasets/ABF12"
     }
 }

@@ -11,9 +11,7 @@ import cv2
 
 import numpy as np
 
-from bop_toolkit_lib import inout, dataset_params
-
-import bop_toolkit_lib.config as bop_config
+from bop_toolkit_lib import inout
 
 from foundpose_utils import (
     misc as foundpose_misc,
@@ -69,7 +67,6 @@ class GenTemplatesOpts(NamedTuple):
 
     version: str
     object_dataset: str
-    object_lids: Optional[List[int]] = None
 
     # Viewpoint options.
     num_viewspheres: int = 1
@@ -100,8 +97,6 @@ class GenTemplatesOpts(NamedTuple):
 
     depth_range: Tuple[int] = None
     data_dir: str = None
-    splat_path: str = None
-
 
 def synthesize_templates(opts: GenTemplatesOpts) -> None: 
 
@@ -198,8 +193,10 @@ def synthesize_templates(opts: GenTemplatesOpts) -> None:
 
     timer.elapsed("Time for setting up the stage")
 
+    splat_path = os.path.join(opts.data_dir, 'meshes', 'obj_splat.ply')
+
     gaussians = GaussianModel(3)
-    gaussians.load_ply(opts.splat_path) 
+    gaussians.load_ply(splat_path) 
     gauss_means = gaussians.get_xyz.detach().cpu().numpy().mean(axis=0)   
 
     parser = ArgumentParser()
@@ -212,18 +209,18 @@ def synthesize_templates(opts: GenTemplatesOpts) -> None:
 
     # Generate template
     # Prepare output folder.
-    object_lid = "pruners"
+    object_lid = os.path.basename(opts.data_dir)
+
     dataset_torch_relpath = os.path.join(
         "templates",
         opts.version,
         opts.object_dataset,
         str(object_lid),
     )
-    output_dir = os.path.join(
-        bop_config.output_path,
-        dataset_torch_relpath,
-    )
-    print("output_dir: ", bop_config.output_path)
+
+    output_dir = os.path.join(opts.data_dir, 'obj_pose_init')
+
+    print("output_dir: ", output_dir)
     if os.path.exists(output_dir) and not opts.overwrite:
         raise ValueError(f"Output directory already exists: {output_dir}")
     os.makedirs(output_dir, exist_ok=True)
