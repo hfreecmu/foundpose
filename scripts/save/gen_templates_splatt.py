@@ -3,13 +3,12 @@
 """Synthesizes object templates."""
 
 from vine_prune.utils.paths import (
-    OBJECT_DIR,
+    get_base_data_dir,
     FP_BOP_PATH,
     FP_DINO_PATH,
     GAUSSIAN_MESH_SPLATTING_DIR,
     FOUNDPOSE_PATH
     )
-from vine_prune.utils.general_utils import splat_to_image_color, create_pose
 
 import sys
 sys.path.append(FOUNDPOSE_PATH)
@@ -41,9 +40,6 @@ from foundpose_utils import geometry, renderer_builder
 from foundpose_utils.renderer_base import RenderType
 
 from bop_toolkit_lib import inout
-
-import pycolmap
-import trimesh
 
 ###
 import torch
@@ -86,21 +82,15 @@ class GenTemplatesOpts(NamedTuple):
     overwrite: bool = True
     debug: bool = True
 
-    # depth_range: Tuple[int] = None
+    depth_range: Tuple[int] = None
 
 def synthesize_templates(opts: GenTemplatesOpts, args) -> None: 
-    object_name = args.object_name
-    baseline = args.baseline
+    model_name = args.model_name
+    is_dexycb = args.is_dexycb
+    is_ho3d = args.is_ho3d
 
-    if baseline is None:
-        raise RuntimeError('Baseline required')
-
-    data_dir = os.path.join(OBJECT_DIR, object_name)
-
-    splat_dir = os.path.join(data_dir, 'splat')
-    sfm_dir = os.path.join(data_dir, 'colmap', 'sparse', '0')
-
-    splat_path = os.path.join(splat_dir, 'scale_center.ply')
+    base_data_dir = get_base_data_dir(is_dexycb=is_dexycb, is_ho3d=is_ho3d)
+    data_dir = os.path.join(base_data_dir, model_name)
 
     # Fix the random seed for reproducibility.
     np.random.seed(0)
@@ -110,17 +100,12 @@ def synthesize_templates(opts: GenTemplatesOpts, args) -> None:
     timer = misc.Timer(enabled=opts.debug)
     timer.start()
 
-    reconstruction = pycolmap.Reconstruction(sfm_dir)
-    fx = reconstruction.cameras[1].focal_length_x
-    fy = reconstruction.cameras[1].focal_length_y
-    cx = reconstruction.cameras[1].principal_point_x
-    cy = reconstruction.cameras[1].principal_point_y
-    intrinsics = [fx, fy, cx, cy]
+    K_path = os.path.join(data_dir, 'cam_K.txt')
+    K = np.loadtxt(K_path)
+    intrinsics = [K[0, 0], K[1, 1], K[0, 2], K[1, 2]]
 
-    height = reconstruction.cameras[1].height
-    width = reconstruction.cameras[1].width
-    dims = [height, width]
-
+    dims_path = os.path.join(data_dir, 'cam_dims.txt')
+    dims = np.loadtxt(dims_path).astype(int).tolist()
     logger.info(f"Camera details are read ")
 
     # Prepare a camera for the template (square viewport of a size divisible by the patch size).
@@ -171,19 +156,7 @@ def synthesize_templates(opts: GenTemplatesOpts, args) -> None:
     # Define radii of the view spheres on which we will sample viewpoints.
     # The specified number of radii is sampled uniformly in the range of
     # camera-object distances from the test split of the specified dataset.
-    # depth_range = opts.depth_range
-
-    splat_mesh = trimesh.load(splat_path)
-    bounding_sphere = splat_mesh.bounding_sphere
-    object_radius = bounding_sphere.to_dict()['radius']
-
-    theta_x = 2*np.arctan(width / (2*fx))
-    theta_y = 2*np.arctan(height / (2*fy))
-    theta = min(theta_x, theta_y)
-    depth_to_use = object_radius / np.sin(theta / 2)
-    depth_to_use *= 1000
-    depth_to_use *= 1.5 
-    depth_range = [depth_to_use]
+    depth_range = opts.depth_range
 
     min_depth = np.min(depth_range)
     max_depth = np.max(depth_range)
@@ -224,6 +197,8 @@ def synthesize_templates(opts: GenTemplatesOpts, args) -> None:
 
     timer.elapsed("Time for setting up the stage")
 
+    splat_path = os.path.join(data_dir, 'meshes', 'obj_splat.ply')
+
     gaussians = GaussianModel(3)
     gaussians.load_ply(splat_path) 
     gauss_means = gaussians.get_xyz.detach().cpu().numpy().mean(axis=0)   
@@ -238,9 +213,9 @@ def synthesize_templates(opts: GenTemplatesOpts, args) -> None:
 
     # Generate template
     # Prepare output folder.
-    object_lid = object_name
+    object_lid = os.path.basename(data_dir)
 
-    output_dir = os.path.join(data_dir, 'foundpose')
+    output_dir = os.path.join(data_dir, 'obj_pose_init')
 
     print("output_dir: ", output_dir)
     if os.path.exists(output_dir) and not opts.overwrite:
@@ -295,10 +270,9 @@ def synthesize_templates(opts: GenTemplatesOpts, args) -> None:
             res_pkg = my_render(gaussians, pipeline, background,
                                 intrinsics, dims, R.T, t, is_tensor=False)
         
-            image = splat_to_image_color(res_pkg['render'])
+            image = (res_pkg['render'].clamp(0.0, 1.0).cpu().numpy().transpose(1, 2, 0)*255).round().astype(np.uint8)
             depth = res_pkg['depth'].cpu().numpy().squeeze(0) * 1000
-            # mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
-            mask = (res_pkg['alpha'].cpu().numpy().squeeze(0) > 0.5).astype(np.uint8)*255
+            mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
 
             output = {}
             output[RenderType.COLOR] = image
@@ -382,7 +356,7 @@ def synthesize_templates(opts: GenTemplatesOpts, args) -> None:
                 res_pkg = my_render(gaussians, pipeline, background,
                                     np.array(crop_intrinsics), crop_dims, R.T, t, is_tensor=False)
             
-                image = splat_to_image_color(res_pkg['render'])
+                image = (res_pkg['render'].clamp(0.0, 1.0).cpu().numpy().transpose(1, 2, 0)*255).round().astype(np.uint8)
                 depth = res_pkg['depth'].cpu().numpy().squeeze(0) * 1000
                 # mask = np.any(image > 0, axis=-1).astype(np.uint8) * 255
                 mask = (res_pkg['alpha'].cpu().numpy().squeeze(0) > 0.5).astype(np.uint8)*255
@@ -391,14 +365,6 @@ def synthesize_templates(opts: GenTemplatesOpts, args) -> None:
                 output[RenderType.COLOR] = image
                 output[RenderType.DEPTH] = depth
                 output[RenderType.MASK] = mask
-
-                del res_pkg
-                t_baseline = np.copy(t)
-                t_baseline[0] -= 0.02
-                res_pkg = my_render(gaussians, pipeline, background,
-                                    np.array(crop_intrinsics), crop_dims, R.T, t_baseline, is_tensor=False)
-                right_image = splat_to_image_color(res_pkg['render'])
-                output['right_image'] = right_image
 
                 # cv2.imshow('test', cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
                 # cv2.waitKey(0)
@@ -425,7 +391,6 @@ def synthesize_templates(opts: GenTemplatesOpts, args) -> None:
 
             # Downsample the renderings to the target size in case of SSAA.
             if opts.ssaa_factor != 1.0:
-                raise RuntimeError('not supported right now')
                 target_size = (camera_model_c2w.width, camera_model_c2w.height)
                 for output_key in output.keys():
                     if output_key in [RenderType.COLOR]:
@@ -469,7 +434,6 @@ def synthesize_templates(opts: GenTemplatesOpts, args) -> None:
 
             rgb_image = output[RenderType.COLOR]
             depth_image = output[RenderType.DEPTH]
-            right_image = output['right_image']
 
             # Object annotation.
             # object_anno = structs.ObjectAnnotation(
@@ -500,27 +464,25 @@ def synthesize_templates(opts: GenTemplatesOpts, args) -> None:
             # Save template rgb, depth and mask.
             timer.start()
             rgb_path = os.path.join(
-                templates_rgb_dir, f"{template_counter:06d}.png"
+                templates_rgb_dir, f"template_{template_counter:04d}.png"
             )
             logger.info(f"Saving template RGB {template_counter} to: {rgb_path}")
             inout.save_im(rgb_path, rgb_image)
-            inout.save_im(rgb_path.replace('.png', '_right.png'), right_image)
 
             depth_path = os.path.join(
-                templates_depth_dir, f"{template_counter:06d}.png"
+                templates_depth_dir, f"template_{template_counter:04d}.png"
             )
             logger.info(f"Saving template depth map {template_counter} to: {depth_path}")
             inout.save_depth(depth_path, depth_image)
-            # np.save(depth_path.replace('.png', '.npy'), depth_image)
             # depth_path = os.path.join(
-            #     templates_depth_dir, f"{template_counter:06d}.npy"
+            #     templates_depth_dir, f"template_{template_counter:04d}.npy"
             # )
             # logger.info(f"Saving template depth map {template_counter} to: {depth_path}")
             # np.save(depth_path, depth_image)
 
             # Save template mask.
             mask_path = os.path.join(
-                templates_mask_dir, f"{template_counter:06d}.png"
+                templates_mask_dir, f"template_{template_counter:04d}.png"
             )
             logger.info(f"Saving template binary mask {template_counter} to: {mask_path}")
             inout.save_im(mask_path, output[RenderType.MASK])
@@ -550,8 +512,7 @@ def synthesize_templates(opts: GenTemplatesOpts, args) -> None:
 
 def main() -> None:
     opts, args, _ = config_util.load_opts_from_json_or_command_line(
-        GenTemplatesOpts,
-        is_obj=True
+        GenTemplatesOpts
     )
 
     synthesize_templates(opts, args)

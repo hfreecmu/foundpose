@@ -15,9 +15,7 @@
         "crop": true,
         "crop_rel_pad": 0.2,
         
-        "depth_range": [1200],
         "ssaa_factor": 1.0,
-        "crop_size": [420, 420],
-        "data_dir": "/home/hfreeman/harry_ws/repos/pruner_track/datasets/ABF12"
+        "crop_size": [420, 420]
     }
 }

@@ -3,7 +3,6 @@
 """Infers pose from objects."""
 
 from vine_prune.utils.paths import (
-    OBJECT_DIR,
     get_base_data_dir,
     FP_BOP_PATH,
     FP_DINO_PATH,
@@ -147,14 +146,11 @@ class InferOpts(NamedTuple):
 
 def infer(opts: InferOpts, args) -> None:
     model_name = args.model_name
-    object_name = args.object_name
     is_dexycb = args.is_dexycb
     is_ho3d = args.is_ho3d
 
     base_data_dir = get_base_data_dir(is_dexycb=is_dexycb, is_ho3d=is_ho3d)
     data_dir = os.path.join(base_data_dir, model_name)
-
-    object_dir = os.path.join(OBJECT_DIR, object_name)
 
     # Prepare a logger and a timer.
     logger = logging.get_logger(level=logging.INFO if opts.debug else logging.WARNING)
@@ -170,7 +166,7 @@ def infer(opts: InferOpts, args) -> None:
     timer.elapsed("Time for setting up the stage")
 
     splat_path = os.path.join(data_dir, 'meshes', 'obj_splat.ply')
-    # model_path = os.path.join(data_dir, 'meshes', 'obj_mesh.ply')
+    model_path = os.path.join(data_dir, 'meshes', 'obj_mesh.ply')
 
     # Create a renderer.
     renderer_type = renderer_builder.RendererType.PYRENDER_RASTERIZER
@@ -200,7 +196,7 @@ def infer(opts: InferOpts, args) -> None:
     config_path = os.path.join(output_dir, "config.json")
     json_util.save_json(config_path, opts)
 
-    object_lid = object_name
+    object_lid = os.path.basename(data_dir)
 
     # pose_evaluator = eval_util.EvaluatorPose([object_lid])
 
@@ -209,7 +205,7 @@ def infer(opts: InferOpts, args) -> None:
         f"Loading representation for object {object_lid} from dataset {opts.object_dataset}..."
     )
 
-    repre_dir = os.path.join(object_dir, 'foundpose', 'object_repre')
+    repre_dir = os.path.join(data_dir, 'obj_pose_init', 'object_repre')
     repre = repre_util.load_object_repre(
         repre_dir=repre_dir,
         tensor_device=device,

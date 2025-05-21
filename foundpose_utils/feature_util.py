@@ -139,6 +139,8 @@ def lift_2d_points_to_3d(
 
     # The considered focal length is the average of fx and fy.
     focal = 0.5 * (camera_model.f[0] + camera_model.f[1])
+    breakpoint()
+    # why?
 
     # 3D points in the camera space.
     points_3d_in_cam = torch.hstack(

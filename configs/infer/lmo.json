@@ -11,22 +11,21 @@
         "pnp_type": "opencv",
         "final_pose_type": "best_coarse",
         "num_preds_factor": 1,
-        "vis_results": true,
+        "vis_results": false,
         "vis_for_paper": false,
 
         "pnp_ransac_iter": 1000,
         "pnp_inlier_thresh": 10.0,
 
         "match_top_n_templates": 5,
-        "grid_cell_size": 3.5,
+        "grid_cell_size": 14,
 
+        "crop": true,
         "crop_size": [
             420,
             420
         ],
 
-        "depth_range": [1200],
-        "extractor_name": "dinov2_version=vits14-reg_stride=14_facet=token_layer=9_logbin=0_norm=1",
-        "data_dir": "/home/hfreeman/harry_ws/repos/pruner_track/datasets/ABF12"
+        "extractor_name": "dinov2_version=vits14-reg_stride=14_facet=token_layer=9_logbin=0_norm=1"
     }
 }

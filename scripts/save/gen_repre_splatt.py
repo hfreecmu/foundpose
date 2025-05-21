@@ -3,7 +3,7 @@
 """Generates a feature-based object representation."""
 
 from vine_prune.utils.paths import (
-    OBJECT_DIR,
+    get_base_data_dir,
     FP_BOP_PATH,
     FP_DINO_PATH,
     GAUSSIAN_MESH_SPLATTING_DIR,
@@ -92,7 +92,7 @@ def generate_raw_repre(
     timer = misc.Timer(enabled=debug)
 
     # Load the template metadata.
-    metadata_path = os.path.join(data_dir, 'foundpose', 'metadata.json')
+    metadata_path = os.path.join(data_dir, 'obj_pose_init', 'metadata.json')
     metadata = json_util.load_json(metadata_path)
 
     # Prepare structures for storing data.
@@ -226,9 +226,12 @@ def generate_repre(
     device: str = "cuda",
     extractor: Optional[torch.nn.Module] = None,
 ) -> None:
-    object_name = args.object_name
+    model_name = args.model_name
+    is_dexycb = args.is_dexycb
+    is_ho3d = args.is_ho3d
 
-    data_dir = os.path.join(OBJECT_DIR, object_name)
+    base_data_dir = get_base_data_dir(is_dexycb=is_dexycb, is_ho3d=is_ho3d)
+    data_dir = os.path.join(base_data_dir, model_name)
 
     logger = logging.get_logger(level=logging.INFO if opts.debug else logging.WARNING)
 
@@ -237,7 +240,7 @@ def generate_repre(
     timer.start()
 
     # Prepare the output folder.
-    output_dir = os.path.join(data_dir, 'foundpose', 'object_repre')
+    output_dir = os.path.join(data_dir, 'obj_pose_init', 'object_repre')
     if os.path.exists(output_dir) and not opts.overwrite:
         raise ValueError(f"Output directory already exists: {output_dir}")
     os.makedirs(output_dir, exist_ok=True)
@@ -392,8 +395,7 @@ def generate_repre_from_list(opts: GenRepreOpts, args) -> None:
 
 
 def main() -> None:
-    opts, args, _ = config_util.load_opts_from_json_or_command_line(GenRepreOpts,
-                                                                    is_obj=True)
+    opts, args, _ = config_util.load_opts_from_json_or_command_line(GenRepreOpts)
     generate_repre_from_list(
         opts, args
     )
