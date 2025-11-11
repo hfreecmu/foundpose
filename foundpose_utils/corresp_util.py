@@ -99,6 +99,9 @@ def establish_correspondences(
     query_knn_index = None
     if feat_matching_type == "cyclic_buddies":
         query_knn_index = knn_util.KNN(k=1, metric="l2")
+        # should be fine if these are not normalized
+        # since cosine distance
+        # query_knn_index = knn_util.KNN(k=1, metric="cosine")
         query_knn_index.fit(query_features)
 
     # Establish correspondences for each dominant template separately.

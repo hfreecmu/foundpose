@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 """Infers pose from objects."""
-
 from vine_prune.utils.paths import (
     OBJECT_DIR,
+    YCB_PROCESSED_DIR,
     get_base_data_dir,
     FP_BOP_PATH,
     FP_DINO_PATH,
@@ -89,21 +89,10 @@ def rotation_distance(rot1, rot2) -> float:
 class InferOpts(NamedTuple):
     """Options that can be specified via the command line."""
 
-    version: str
-    repre_version: str
-    object_dataset: str
-    object_lids: Optional[List[int]] = None
-    max_sym_disc_step: float = 0.01
-
     # Cropping options.
     crop: bool = True
     crop_rel_pad: float = 0.2
     crop_size: Tuple[int, int] = (420, 420)
-
-    # Object instance options.
-    use_detections: bool = True
-    num_preds_factor: float = 1.0
-    min_visibility: float = 0.1
 
     # Feature extraction options.
     extractor_name: str = "dinov2_vitl14"
@@ -133,17 +122,12 @@ class InferOpts(NamedTuple):
     vis_for_paper: bool = True
     debug: bool = True
 
-    # hard coding for template render
-    features_patch_size: int = 14
-    ssaa_factor: float = 1.0
-    template_crop_size = (420, 420)
+    # # hard coding for template render
+    # features_patch_size: int = 14
+    # ssaa_factor: float = 1.0
+    # template_crop_size = (420, 420)
 
-    # rot_thresh: float = 60.0
-    rot_thresh: float = -1.0
-
-    # gauss opt
-    num_opt_iters: int = 200
-    opt_lr: float = 1e-3
+    # rot_thresh: float = -1.0
 
 def infer(opts: InferOpts, args) -> None:
     model_name = args.model_name
@@ -154,7 +138,10 @@ def infer(opts: InferOpts, args) -> None:
     base_data_dir = get_base_data_dir(is_dexycb=is_dexycb, is_ho3d=is_ho3d)
     data_dir = os.path.join(base_data_dir, model_name)
 
-    object_dir = os.path.join(OBJECT_DIR, object_name)
+    if not (is_dexycb or is_ho3d):
+        object_dir = os.path.join(OBJECT_DIR, object_name)
+    else:
+        object_dir = os.path.join(YCB_PROCESSED_DIR, object_name)
 
     # Prepare a logger and a timer.
     logger = logging.get_logger(level=logging.INFO if opts.debug else logging.WARNING)
@@ -170,12 +157,12 @@ def infer(opts: InferOpts, args) -> None:
     timer.elapsed("Time for setting up the stage")
 
     splat_path = os.path.join(data_dir, 'meshes', 'obj_splat.ply')
-    # model_path = os.path.join(data_dir, 'meshes', 'obj_mesh.ply')
+    model_path = os.path.join(data_dir, 'meshes', 'obj_mesh_simple.ply')
 
     # Create a renderer.
     renderer_type = renderer_builder.RendererType.PYRENDER_RASTERIZER
-    # renderer = renderer_builder.build(renderer_type=renderer_type, model_path=model_path)
-    renderer = None
+    renderer = renderer_builder.build(renderer_type=renderer_type, model_path=model_path)
+    #renderer = None
     gaussians = GaussianModel(3)
     gaussians.load_ply(splat_path) 
 
@@ -206,7 +193,7 @@ def infer(opts: InferOpts, args) -> None:
 
     # Load the object representation.
     logger.info(
-        f"Loading representation for object {object_lid} from dataset {opts.object_dataset}..."
+        f"Loading representation for object {object_lid}..."
     )
 
     repre_dir = os.path.join(object_dir, 'foundpose', 'object_repre')
@@ -224,8 +211,13 @@ def infer(opts: InferOpts, args) -> None:
         visual_words_knn_index = knn_util.KNN(
             k=repre.template_desc_opts.tfidf_knn_k,
             metric=repre.template_desc_opts.tfidf_knn_metric
+            # metric='cosine'
         )
+        # should be fine if cluster centroids are not normalized
+        # since cosine distance
         visual_words_knn_index.fit(repre.feat_cluster_centroids)
+    else:
+        raise RuntimeError('only tfidf supported right now')
 
     # Build per-template KNN index with features from that template.
     template_knn_indices = []
@@ -240,10 +232,11 @@ def infer(opts: InferOpts, args) -> None:
 
             # Build knn index for object features.
             template_knn_index = knn_util.KNN(k=1, metric="l2")
+            # template_knn_index = knn_util.KNN(k=1, metric="cosine")
             template_knn_index.fit(template_feats.cpu())
             template_knn_indices.append(template_knn_index)
 
-        template_knn_indices_orig = copy.deepcopy(template_knn_indices)
+        # template_knn_indices_orig = copy.deepcopy(template_knn_indices)
         logger.info("Per-template KNN indices built.")
 
     logging.log_heading(
@@ -278,7 +271,7 @@ def infer(opts: InferOpts, args) -> None:
         dims = np.loadtxt(dims_path).astype(int)
         grid_size = (dims[1], dims[0])
     
-    grid_points = feature_util.generate_grid_points(
+    grid_points, grid_rows, grid_cols = feature_util.generate_grid_points(
         grid_size=grid_size,
         cell_size=opts.grid_cell_size,
     )
@@ -314,7 +307,13 @@ def infer(opts: InferOpts, args) -> None:
         orig_image_np_hwc = imageio.imread(image_path) / 255.0
         orig_mask_modal = imageio.imread(mask_path)
 
-        orig_image_np_hwc[orig_mask_modal == 0] = 0.0
+        # Erode the mask a bit to ignore pixels at the contour where
+        # depth values tend to be noisy.
+        kernel = np.ones((5, 5), dtype=int)
+        orig_mask_modal = cv2.erode(orig_mask_modal, kernel)
+
+        # this will be done later
+        # orig_image_np_hwc[orig_mask_modal == 0] = 0.0
 
         ys, xs = orig_mask_modal.nonzero()
         box = np.array(misc.calc_2d_box(xs, ys))
@@ -336,6 +335,7 @@ def infer(opts: InferOpts, args) -> None:
 
         # Optional cropping.
         if not opts.crop:
+            raise RuntimeError('need crop')
             camera_c2w = orig_camera_c2w
             image_np_hwc = orig_image_np_hwc
             mask_modal = orig_mask_modal
@@ -387,6 +387,8 @@ def infer(opts: InferOpts, args) -> None:
             # The virtual camera is becoming the main camera.
             camera_c2w = crop_camera_model_c2w
 
+        image_np_hwc[mask_modal == 0] = 0
+
         timer.elapsed("Time for preparation")
         timer.start()
 
@@ -394,6 +396,7 @@ def infer(opts: InferOpts, args) -> None:
         image_tensor_chw = array_to_tensor(image_np_hwc).to(torch.float32).permute(2,0,1).to(device)
         image_tensor_bchw = image_tensor_chw.unsqueeze(0)
         extractor_output = extractor(image_tensor_bchw)
+        # feature_map_chw = extractor_output.squeeze(0).permute(1, 0).reshape(-1, grid_rows, grid_cols)#
         feature_map_chw = extractor_output["feature_maps"][0]
 
         timer.elapsed("Time for feature extraction")
@@ -406,6 +409,7 @@ def infer(opts: InferOpts, args) -> None:
 
         # Subsample query points if we have too many.
         if query_points.shape[0] > opts.max_num_queries:
+            raise RuntimeError('uhhh')
             perm = torch.randperm(query_points.shape[0])
             query_points = query_points[perm[: opts.max_num_queries]]
             msg = (
@@ -556,7 +560,7 @@ def infer(opts: InferOpts, args) -> None:
         #             coarse_poses.append(cp)
 
         if len(coarse_poses) == 0:
-            breakpoint()
+            #breakpoint()
             raise RuntimeError('need a coarse pose', filename)
 
         # Find the best coarse pose.
@@ -681,6 +685,8 @@ def infer(opts: InferOpts, args) -> None:
                     # For paper visualizations:
                     vis_for_paper=opts.vis_for_paper,
                     extractor=extractor,
+                    grid_rows=grid_rows,
+                    grid_cols=grid_cols
                 )
             
             timer.elapsed("Time for visualization")

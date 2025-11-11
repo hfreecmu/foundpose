@@ -201,6 +201,8 @@ def vis_inference_results(
     vis_for_paper: bool = True,
     vis_for_teaser: bool = False,
     extractor: Any = None,
+    grid_rows=None,
+    grid_cols=None
 ):
 
     device = feature_map_chw.device
@@ -245,6 +247,7 @@ def vis_inference_results(
         template_tensor_chw = array_to_tensor(template).to(torch.float32)/255.0
         template_tensor_bchw = template_tensor_chw.unsqueeze(0).to(device)
         extractor_output = extractor(template_tensor_bchw)
+        # template_feature_map_chw = extractor_output.squeeze(0).permute(1, 0).reshape(-1, grid_rows, grid_cols)#
         template_feature_map_chw = extractor_output["feature_maps"][0]
 
         # channels = feature_map_chw.shape[0]

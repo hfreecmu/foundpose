@@ -20,6 +20,37 @@ from torchinfo import summary
 
 logger: logging.Logger = logging.get_logger()
 
+class MyDinoExtractor(nn.Module):
+    def __init__(self, model_name: str = 'dinov2_vitl14_reg'):
+        super().__init__()
+        self.model = torch.hub.load('facebookresearch/dinov2', model_name)
+        self.model.eval()
+        self.transform = T.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+
+    # Not sure why but there is a one layer difference between this and orig foundpose
+    # IE this 22 is foundpose 21
+    def forward(self, images, apply_transform=True, layer=22, feature_type='patch'):
+        with torch.inference_mode():
+            if apply_transform:
+                x = self.model.prepare_tokens_with_masks(self.transform(images), None)
+            else:
+                x = self.model.prepare_tokens_with_masks(images, None)
+
+            for blk_idx, blk in enumerate(self.model.blocks):
+                x = blk(x)
+                if blk_idx + 1 == layer:
+                    break
+
+            x_norm = self.model.norm(x)
+
+            if feature_type == 'cls':
+                out = x_norm[:, 0]
+            elif feature_type == 'reg':
+                out = x_norm[:, 1 : self.model.num_register_tokens + 1]
+            elif feature_type == 'patch':
+                out = x_norm[:, self.model.num_register_tokens + 1 :]
+                
+            return out
 
 class DinoFeatureExtractor(nn.Module):
     """DINOv2 feature extractor.
@@ -91,6 +122,7 @@ class DinoFeatureExtractor(nn.Module):
 
         # DINOv2 is trained with stride 14.
         if self.stride != 14:
+            raise RuntimeError('not supported right now')
             self.model = self.patch_vit_resolution(self.model, stride=self.stride)
 
         self.patch_size: int = self.model.patch_embed.patch_size[0]

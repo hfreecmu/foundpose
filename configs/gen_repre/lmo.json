@@ -1,8 +1,5 @@
 {
     "gen_repre_opts": {
-        "version": "v1",
-        "templates_version": "v1",
-        "object_dataset": "lmo",
         "apply_pca": true,
         "cluster_features": true,
         "template_desc_opts": {
@@ -12,7 +9,8 @@
         "pca_components": 256,
         "cluster_num": 2048,
         "grid_cell_size": 14,
+        "pca_max_samples_for_fitting": 200000,
 
-        "extractor_name": "dinov2_version=vits14-reg_stride=14_facet=token_layer=9_logbin=0_norm=1"
+        "extractor_name": "dinov2_version=vitl14-reg_stride=14_facet=token_layer=18_logbin=0_norm=1"
     }
 }

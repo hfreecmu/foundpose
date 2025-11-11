@@ -18,6 +18,7 @@ def make_feature_extractor(model_name: str) -> torch.nn.Module:
 
     if model_name.startswith("dinov2_"):
         return dinov2_utils.DinoFeatureExtractor(model_name=model_name)
+        #return dinov2_utils.MyDinoExtractor()
     else:
         raise NotImplementedError(model_name)
 
@@ -48,7 +49,7 @@ def generate_grid_points(
     grid_x, grid_y = torch.meshgrid(x, y, indexing="xy")
 
     # 2D coordinates of shape (num_points, 2).
-    return torch.vstack((grid_x.flatten(), grid_y.flatten())).T
+    return torch.vstack((grid_x.flatten(), grid_y.flatten())).T, grid_rows, grid_cols
 
 
 def filter_points_by_box(
@@ -139,8 +140,7 @@ def lift_2d_points_to_3d(
 
     # The considered focal length is the average of fx and fy.
     focal = 0.5 * (camera_model.f[0] + camera_model.f[1])
-    breakpoint()
-    # why?
+    # TODO why?
 
     # 3D points in the camera space.
     points_3d_in_cam = torch.hstack(
@@ -154,6 +154,7 @@ def lift_2d_points_to_3d(
         torch.floor(points[:, 0]).to(torch.int32),
     ].reshape(-1, 1)
     points_3d_in_cam *= depths / points_3d_in_cam[:, 2].reshape(-1, 1)
+    #TODO interpolate this?
 
     return points_3d_in_cam
 
@@ -175,10 +176,11 @@ def get_visual_features_registered_in_3d(
     timer.start()
 
     # Generate grid points at which to sample feature vectors.
-    grid_points = generate_grid_points(
+    grid_points, grid_rows, grid_cols = generate_grid_points(
         grid_size=(image_chw.shape[2], image_chw.shape[1]),
         cell_size=grid_cell_size,
-    ).to(device)
+    )
+    grid_points = grid_points.to(device)
 
     # Erode the mask a bit to ignore pixels at the contour where
     # depth values tend to be noisy.
@@ -216,6 +218,9 @@ def get_visual_features_registered_in_3d(
 
     # Extract feature map at the current image scale.
     extractor_output = extractor(image_bchw)
+    # TODO not sure about this
+    #extractor_output = F.normalize(extractor_output, dim=-1)
+    # feature_map_chw = extractor_output.squeeze(0).permute(1, 0).reshape(-1, grid_rows, grid_cols)#
     feature_map_chw = extractor_output["feature_maps"][0]
     feature_map_chw = feature_map_chw.to(device)
 

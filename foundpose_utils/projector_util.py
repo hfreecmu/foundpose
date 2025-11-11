@@ -56,6 +56,8 @@ class PCAProjector(Projector):
         # Cap the number of feature vectors for PCA fitting.
         if "max_samples" in kwargs:
             if data_x.shape[0] > kwargs["max_samples"]:
+                #breakpoint()
+                raise RuntimeError('ummmm')
                 perm = torch.randperm(data_x.shape[0])
                 sampled_ids = perm[: kwargs["max_samples"]]
                 data_x = data_x[sampled_ids]

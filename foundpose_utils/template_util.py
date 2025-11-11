@@ -48,16 +48,17 @@ def calc_tfidf(
     else:
         word_weights = torch.ones_like(feature_word_dists)
 
+    # Calculate inverse document frequencies.
+    feature_word_ids_flat = feature_word_ids.reshape(-1)
+    idf = word_idfs[feature_word_ids_flat]
+
     # Normalize the weights such as they sum up to 1 for each query.
     word_weights = torch.nn.functional.normalize(word_weights, p=2, dim=1).reshape(-1)
 
     # Calculate term frequencies.
     # tf = word_weights  # https://www.cs.cmu.edu/~16385/s17/Slides/8.2_Bag_of_Visual_Words.pdf
     tf = word_weights / feature_word_ids.shape[0]  # From "Lost in Quantization".
-
-    # Calculate inverse document frequencies.
-    feature_word_ids_flat = feature_word_ids.reshape(-1)
-    idf = word_idfs[feature_word_ids_flat]
+    #tf = word_weights.flatten() / feature_word_ids_flat.shape[0]
 
     # Calculate tfidf values.
     tfidf = torch.multiply(tf, idf)
@@ -102,6 +103,7 @@ def calc_tfidf_descriptors(
     )
 
     # Build a KNN index for the visual words.
+    # feat_knn_index = knn_util.KNN(k=tfidf_knn_k, metric="cosine")
     feat_knn_index = knn_util.KNN(k=tfidf_knn_k, metric="l2")
     feat_knn_index.fit(feat_words.cpu())
 
@@ -110,6 +112,7 @@ def calc_tfidf_descriptors(
     for template_id in range(num_templates):
         tpl_mask = feat_to_template_ids == template_id
         word_dists, word_ids = feat_knn_index.search(feat_vectors[tpl_mask])
+
         tfidf = calc_tfidf(
             feature_word_ids=word_ids,
             feature_word_dists=word_dists,

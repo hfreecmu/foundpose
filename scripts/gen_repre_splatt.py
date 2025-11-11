@@ -4,6 +4,7 @@
 
 from vine_prune.utils.paths import (
     OBJECT_DIR,
+    YCB_PROCESSED_DIR,
     FP_BOP_PATH,
     FP_DINO_PATH,
     GAUSSIAN_MESH_SPLATTING_DIR,
@@ -22,6 +23,7 @@ import logging
 from typing import Any, Dict, List, NamedTuple, Optional
 
 import torch
+import torch.nn.functional as F
 
 from foundpose_utils.misc import array_to_tensor
 
@@ -50,10 +52,6 @@ import numpy as np
 class GenRepreOpts(NamedTuple):
     """Options that can be specified via the command line."""
 
-    version: str
-    templates_version: str
-    object_dataset: str
-
     # Feature extraction options.
     extractor_name: str = "dinov2_vits14_reg"
     grid_cell_size: float = 14.0
@@ -79,7 +77,6 @@ class GenRepreOpts(NamedTuple):
 def generate_raw_repre(
     opts: GenRepreOpts,
     data_dir,
-    object_dataset: str,
     extractor: torch.nn.Module,
     output_dir: str,
     device: str = "cuda",
@@ -94,6 +91,9 @@ def generate_raw_repre(
     # Load the template metadata.
     metadata_path = os.path.join(data_dir, 'foundpose', 'metadata.json')
     metadata = json_util.load_json(metadata_path)
+
+    # depth dir
+    depth_dir = os.path.join(data_dir, 'foundpose', 'depth_fs')
 
     # Prepare structures for storing data.
     feat_vectors_list = []
@@ -125,8 +125,10 @@ def generate_raw_repre(
 
         # RGB/monochrome and depth images (in mm).
         image_path = data_sample["rgb_image_path"]
-        depth_path = data_sample["depth_map_path"]
         mask_path = data_sample["binary_mask_path"]
+
+        basename = os.path.basename(image_path).split('.')[0]
+        depth_path = os.path.join(depth_dir, basename + '.png')
 
         image_arr = inout.load_im(image_path) # H,W,C
         depth_image_arr = inout.load_depth(depth_path)
@@ -138,7 +140,6 @@ def generate_raw_repre(
         object_mask_modal = array_to_tensor(mask_image_arr).to(torch.float32).to(device)
 
         # Get the object annotation.
-        assert data_sample["dataset"] == object_dataset
         assert data_sample["template_id"] == data_id
 
         object_pose = data_sample["pose"]
@@ -222,13 +223,20 @@ def generate_raw_repre(
 def generate_repre(
     opts: GenRepreOpts,
     args,
-    dataset: str,
     device: str = "cuda",
     extractor: Optional[torch.nn.Module] = None,
 ) -> None:
     object_name = args.object_name
+    is_obj = args.is_obj
+    is_ycb = args.is_ycb
 
-    data_dir = os.path.join(OBJECT_DIR, object_name)
+    assert not (is_obj and is_ycb)
+    assert (is_obj or is_ycb)
+
+    if not is_ycb:
+        data_dir = os.path.join(OBJECT_DIR, object_name)
+    else:
+        data_dir = os.path.join(YCB_PROCESSED_DIR, object_name)
 
     logger = logging.get_logger(level=logging.INFO if opts.debug else logging.WARNING)
 
@@ -257,7 +265,6 @@ def generate_repre(
     repre = generate_raw_repre(
         opts=opts,
         data_dir=data_dir,
-        object_dataset=dataset,
         output_dir=output_dir,
         extractor=extractor,
         device=device,
@@ -288,18 +295,21 @@ def generate_repre(
 
         timer.elapsed("Time for PCA")
 
+    # feat_vectors = F.normalize(feat_vectors, dim=-1)
     torch.cuda.empty_cache()
 
     # Cluster features into visual words.
     if opts.cluster_features:
         timer.start()
-
         logger.info(f"Clustering features into {opts.cluster_num} visual words...")
         centroids, cluster_ids, centroid_distances = cluster_util.kmeans(
             samples=feat_vectors,
             num_centroids=opts.cluster_num,
             verbose=True,
         )
+        
+        # TODO norm the centroids?
+        # centroids = F.normalize(centroids, dim=-1)
 
         # Store the clustering results in the object repre.
         repre.feat_cluster_centroids = centroids
@@ -388,12 +398,11 @@ def generate_repre_from_list(opts: GenRepreOpts, args) -> None:
     print("Device: ", device)
 
     # Process each image separately.
-    generate_repre(opts, args, opts.object_dataset, device, extractor)
+    generate_repre(opts, args, device, extractor)
 
 
 def main() -> None:
-    opts, args, _ = config_util.load_opts_from_json_or_command_line(GenRepreOpts,
-                                                                    is_obj=True)
+    opts, args, _ = config_util.load_opts_from_json_or_command_line(GenRepreOpts)
     generate_repre_from_list(
         opts, args
     )

@@ -238,7 +238,6 @@ def camel_to_snake_name(name: str) -> str:
 
 def load_opts_from_json_or_command_line(
     opts_type: Union[NamedTuple, Mapping[str, NamedTuple]],
-    is_obj=False
 ) -> Tuple[NamedTuple, Optional[str]]:
     """Loads options from a JSON file or the command line.
 
@@ -251,11 +250,12 @@ def load_opts_from_json_or_command_line(
         subcommand was specified).
     """
     parser = argparse.ArgumentParser()
-    if not is_obj:
-        parser.add_argument("--model_name", type=str, required=True)
-    else:
-        pass
-    parser.add_argument("--object_name", type=str, required=True)
+
+    parser.add_argument("--model_name", type=str, default=None)
+    parser.add_argument("--object_name", type=str, default=None)
+    parser.add_argument("--is_obj", action='store_true')
+    parser.add_argument("--is_ycb", action='store_true')
+    parser.add_argument('--force_dc', action='store_true')
 
     # Try to parse argument `--opts-path`.
     parser.add_argument("--opts-path", type=str, required=True)
